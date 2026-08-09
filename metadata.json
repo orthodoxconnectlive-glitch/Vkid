@@ -1,6 +1,6 @@
 {
-  "name": "VKid - Child-Safe Educational Platform & Parental Controls",
-  "description": "Safe, interactive educational mobile platform for children ages 4–10 featuring media library, mini-games, daily rewards, audio assistance, and PIN-protected parental controls.",
-  "requestFramePermissions": ["microphone"],
+  "name": "OrthodoxConnect",
+  "description": "A high-performance social network and fellowship platform for the Orthodox Christian community.",
+  "requestFramePermissions": ["camera", "microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

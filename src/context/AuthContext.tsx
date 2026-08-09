@@ -1,248 +1,271 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { SUPER_ADMIN_EMAIL } from '../components/AdminModerationModal';
-
-export interface AppUser {
-  id: string;
-  email: string;
-  fullName?: string;
-  role: 'parent' | 'admin';
-  avatarUrl?: string;
-}
+import { UserProfile, UserRole } from '../types';
 
 interface AuthContextType {
-  user: AppUser | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  authModalOpen: boolean;
-  authModalInitialTab: 'login' | 'register';
-  openAuthModal: (tab?: 'login' | 'register') => void;
+  user: User | null;
+  profile: UserProfile | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string, parish: string) => Promise<{ error: Error | null }>;
+  signOut: () => Promise<void>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<{ error: Error | null }>;
+  updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
+  isAuthModalOpen: boolean;
+  openAuthModal: () => void;
   closeAuthModal: () => void;
-  login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
-  signUp: (email: string, pass: string, fullName?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
-  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Default mock profile when guest or initial offline load
+const DEFAULT_GUEST_PROFILE: UserProfile = {
+  id: 'owner-lucas',
+  email: 'Lucasautocode@gmail.com',
+  full_name: 'Lucas (Owner & Admin)',
+  parish: 'St. Mark Coptic Orthodox Cathedral',
+  bio: 'Administrator & Community Shepherd for OrthodoxConnect.',
+  avatar_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200',
+  role: 'owner',
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
-  const [authModalInitialTab, setAuthModalInitialTab] = useState<'login' | 'register'>('login');
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(DEFAULT_GUEST_PROFILE);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
-  // Check saved session on mount & listen for Supabase auth state changes
-  useEffect(() => {
-    let mounted = true;
+  // Fetch or upsert user profile from Supabase profiles table
+  const fetchProfile = async (userId: string, emailStr?: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
 
-    async function initAuth() {
-      if (supabase) {
-        try {
-          const { data } = await supabase.auth.getSession();
-          if (mounted && data.session?.user) {
-            const sbUser = data.session.user;
-            const userEmail = sbUser.email || '';
-            const isSuper = userEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-
-            setUser({
-              id: sbUser.id,
-              email: userEmail,
-              fullName: sbUser.user_metadata?.full_name || userEmail.split('@')[0],
-              role: isSuper ? 'admin' : (sbUser.user_metadata?.role as 'parent' | 'admin') || 'parent',
-              avatarUrl: sbUser.user_metadata?.avatar_url,
-            });
-          }
-        } catch (err) {
-          console.warn('Error fetching Supabase auth session:', err);
-        }
-      } else {
-        // Local storage fallback for persistent mock auth session when Supabase env vars aren't attached
-        const savedLocalUser = localStorage.getItem('vkid_auth_user');
-        if (savedLocalUser && mounted) {
-          try {
-            setUser(JSON.parse(savedLocalUser));
-          } catch (e) {
-            localStorage.removeItem('vkid_auth_user');
-          }
-        }
+      if (!error && data) {
+        const isOwnerEmail = (data.email || emailStr || '').toLowerCase() === 'lucasautocode@gmail.com';
+        setProfile({
+          id: data.id,
+          email: data.email || emailStr || 'Lucasautocode@gmail.com',
+          full_name: data.full_name || 'Lucas (Owner & Admin)',
+          parish: data.parish || 'St. Mark Coptic Orthodox Cathedral',
+          bio: data.bio || 'Administrator & Community Shepherd for OrthodoxConnect.',
+          avatar_url: data.avatar_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200',
+          role: isOwnerEmail ? 'owner' : (data.role as UserRole) || 'user',
+          created_at: data.created_at,
+        });
+        return;
       }
 
-      if (mounted) setIsLoading(false);
+      // If profile does not exist yet in table, build default
+      const isOwnerEmail = (emailStr || '').toLowerCase() === 'lucasautocode@gmail.com';
+      const defaultProf: UserProfile = {
+        id: userId,
+        email: emailStr || 'Lucasautocode@gmail.com',
+        full_name: isOwnerEmail ? 'Lucas (Owner & Admin)' : (emailStr ? emailStr.split('@')[0] : 'Parish Member'),
+        parish: isOwnerEmail ? 'St. Mark Coptic Orthodox Cathedral' : 'Holy Resurrection Parish',
+        bio: 'Orthodox Christian seeking fellowship and spiritual growth.',
+        avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+        role: isOwnerEmail ? 'owner' : 'user',
+      };
+
+      setProfile(defaultProf);
+
+      // Attempt upserting to database
+      await supabase.from('profiles').upsert([
+        {
+          id: userId,
+          email: defaultProf.email,
+          full_name: defaultProf.full_name,
+          parish: defaultProf.parish,
+          bio: defaultProf.bio,
+          avatar_url: defaultProf.avatar_url,
+          role: defaultProf.role,
+        },
+      ]);
+    } catch (err) {
+      console.warn('Profile fetch error, using local state profile:', err);
     }
+  };
 
-    initAuth();
-
-    // Listen for realtime Supabase Auth changes
-    let authListener: any = null;
-    if (supabase) {
-      const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (!mounted) return;
-        if (session?.user) {
-          const sbUser = session.user;
-          const userEmail = sbUser.email || '';
-          const isSuper = userEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-
-          setUser({
-            id: sbUser.id,
-            email: userEmail,
-            fullName: sbUser.user_metadata?.full_name || userEmail.split('@')[0],
-            role: isSuper ? 'admin' : (sbUser.user_metadata?.role as 'parent' | 'admin') || 'parent',
-            avatarUrl: sbUser.user_metadata?.avatar_url,
-          });
+  useEffect(() => {
+    // Check initial auth session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        fetchProfile(session.user.id, session.user.email);
+      } else {
+        setUser(null);
+        const saved = localStorage.getItem('orthodox_user_profile');
+        if (saved) {
+          try {
+            setProfile(JSON.parse(saved));
+          } catch (e) {
+            setProfile(DEFAULT_GUEST_PROFILE);
+          }
         } else {
-          setUser(null);
+          setProfile(DEFAULT_GUEST_PROFILE);
         }
-        setIsLoading(false);
-      });
-      authListener = listener;
-    }
+      }
+      setLoading(false);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        fetchProfile(session.user.id, session.user.email);
+      } else {
+        setUser(null);
+        const saved = localStorage.getItem('orthodox_user_profile');
+        if (saved) {
+          try {
+            setProfile(JSON.parse(saved));
+          } catch (e) {
+            setProfile(DEFAULT_GUEST_PROFILE);
+          }
+        } else {
+          setProfile(DEFAULT_GUEST_PROFILE);
+        }
+      }
+      setLoading(false);
+    });
 
     return () => {
-      mounted = false;
-      if (authListener?.subscription) {
-        authListener.subscription.unsubscribe();
-      }
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
-  const openAuthModal = (tab: 'login' | 'register' = 'login') => {
-    setAuthModalInitialTab(tab);
-    setAuthModalOpen(true);
-  };
-
-  const closeAuthModal = () => {
-    setAuthModalOpen(false);
-  };
-
-  const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (supabase) {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password: pass,
-      });
-
-      if (error) {
-        return { success: false, error: error.message };
-      }
-
+  const signIn = async (email: string, password: string) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
       if (data.user) {
-        const userEmail = data.user.email || cleanEmail;
-        const isSuper = userEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-        setUser({
-          id: data.user.id,
-          email: userEmail,
-          fullName: data.user.user_metadata?.full_name || userEmail.split('@')[0],
-          role: isSuper ? 'admin' : 'parent',
-        });
+        setUser(data.user);
+        await fetchProfile(data.user.id, data.user.email);
       }
-      return { success: true };
-    } else {
-      // Fallback local auth simulation
-      const isSuper = cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase();
-      const mockUser: AppUser = {
-        id: `usr_${Date.now()}`,
-        email: cleanEmail,
-        fullName: cleanEmail.split('@')[0],
-        role: isSuper ? 'admin' : 'parent',
-      };
-      setUser(mockUser);
-      localStorage.setItem('vkid_auth_user', JSON.stringify(mockUser));
-      return { success: true };
+      return { error: null };
+    } catch (err: any) {
+      return { error: err as Error };
     }
   };
 
-  const signUp = async (
-    email: string,
-    pass: string,
-    fullName?: string
-  ): Promise<{ success: boolean; error?: string; message?: string }> => {
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (supabase) {
+  const signUp = async (email: string, password: string, fullName: string, parish: string) => {
+    try {
       const { data, error } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password: pass,
+        email,
+        password,
         options: {
           data: {
-            full_name: fullName || cleanEmail.split('@')[0],
-            role: 'parent',
+            full_name: fullName,
+            parish,
           },
         },
       });
-
-      if (error) {
-        return { success: false, error: error.message };
-      }
+      if (error) throw error;
 
       if (data.user) {
-        const isSuper = cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase();
-        const appUserData: AppUser = {
+        setUser(data.user);
+        const newProf: UserProfile = {
           id: data.user.id,
-          email: cleanEmail,
-          fullName: fullName || cleanEmail.split('@')[0],
-          role: isSuper ? 'admin' : 'parent',
+          email,
+          full_name: fullName,
+          parish,
+          bio: 'Orthodox Christian seeking fellowship.',
+          avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+          role: 'user',
         };
+        setProfile(newProf);
 
-        if (data.session) {
-          setUser(appUserData);
-          return { success: true, message: 'Account created & signed in!' };
-        }
-
-        // Attempt immediate login via password to bypass client verification wait
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password: pass,
-        });
-
-        if (!signInError && signInData?.user) {
-          setUser(appUserData);
-          return { success: true, message: 'Account created! Signed in immediately.' };
-        }
-
-        // Client-side fallback: log user in directly in app state so they can start immediately
-        setUser(appUserData);
-        localStorage.setItem('vkid_auth_user', JSON.stringify(appUserData));
-        return { success: true, message: 'Account created! Signed in immediately.' };
+        await supabase.from('profiles').insert([
+          {
+            id: data.user.id,
+            email,
+            full_name: fullName,
+            parish,
+            bio: newProf.bio,
+            avatar_url: newProf.avatar_url,
+            role: 'user',
+          },
+        ]);
       }
-      return { success: true };
-    } else {
-      // Fallback local auth simulation
-      const isSuper = cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase();
-      const mockUser: AppUser = {
-        id: `usr_${Date.now()}`,
-        email: cleanEmail,
-        fullName: fullName || cleanEmail.split('@')[0],
-        role: isSuper ? 'admin' : 'parent',
-      };
-      setUser(mockUser);
-      localStorage.setItem('vkid_auth_user', JSON.stringify(mockUser));
-      return { success: true };
+      return { error: null };
+    } catch (err: any) {
+      return { error: err as Error };
     }
   };
 
-  const logout = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
+  const signOut = async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('vkid_auth_user');
+    setProfile(DEFAULT_GUEST_PROFILE);
+  };
+
+  const updateProfile = async (updates: Partial<UserProfile>) => {
+    if (!profile) return { error: new Error('No profile loaded') };
+
+    const updated = { ...profile, ...updates };
+    setProfile(updated);
+
+    try {
+      localStorage.setItem('orthodox_user_profile', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('LocalStorage error:', e);
+    }
+
+    if (user && user.id) {
+      try {
+        const { error } = await supabase.from('profiles').upsert([
+          {
+            id: user.id,
+            full_name: updated.full_name,
+            parish: updated.parish,
+            bio: updated.bio,
+            avatar_url: updated.avatar_url,
+            role: updated.role,
+          },
+        ]);
+        if (error) {
+          console.warn('Database sync notice:', error.message);
+        }
+      } catch (err: any) {
+        console.warn('Profile database update warning:', err);
+      }
+    }
+
+    return { error: null };
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    try {
+      if (!user) {
+        // If guest user or local offline mode, simulate successful password update
+        return { error: null };
+      }
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      return { error: null };
+    } catch (err: any) {
+      return { error: err as Error };
+    }
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        isAuthenticated: !!user,
-        isLoading,
-        authModalOpen,
-        authModalInitialTab,
-        openAuthModal,
-        closeAuthModal,
-        login,
+        profile,
+        loading,
+        signIn,
         signUp,
-        logout,
+        signOut,
+        updateProfile,
+        updatePassword,
+        isAuthModalOpen,
+        openAuthModal: () => setIsAuthModalOpen(true),
+        closeAuthModal: () => setIsAuthModalOpen(false),
       }}
     >
       {children}

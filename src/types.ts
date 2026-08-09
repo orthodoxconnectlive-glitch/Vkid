@@ -1,122 +1,157 @@
-export type AgeGroup = '4-5' | '6-7' | '8-10';
+export type UserRole = 'admin' | 'user' | 'owner';
 
-export type SupportedLanguage = 'en' | 'ar' | 'es' | 'zh' | 'ko' | 'ru' | 'fr' | 'de' | 'pt' | 'hi' | 'ja';
-
-export interface ChildProfile {
+export interface UserProfile {
   id: string;
-  name: string;
-  age: number;
-  ageGroup: AgeGroup;
-  avatarUrl: string;
-  avatarColor: string;
-  dailyGoalMinutes: number;
-  timeSpentTodayMinutes: number;
-  earnedBadges: string[];
-  unlockedStickers: string[];
-  favoriteMediaIds: string[];
-}
-
-export type MediaType = 'video' | 'audiobook' | 'rhyme';
-
-export type VideoApprovalStatus = 'pending_approval' | 'approved' | 'rejected';
-
-export interface MediaItem {
-  id: string;
-  title: string;
-  type: MediaType;
-  category: string;
-  duration: string;
-  thumbnailUrl: string;
-  mediaUrl: string;
-  targetAgeGroup: AgeGroup[];
-  description: string;
-  isPopular?: boolean;
-  status?: VideoApprovalStatus;
-  uploadedBy?: string;
-  createdAt?: string;
-}
-
-export type UserRole = 'super_admin' | 'admin' | 'parent';
-
-export interface UserAccount {
-  id: string;
-  displayName: string;
   email: string;
+  full_name: string;
+  parish: string;
+  bio?: string;
+  avatar_url?: string;
   role: UserRole;
-  avatarUrl?: string;
-  status: 'active' | 'suspended';
-  uploadedCount?: number;
-  createdAt: string;
-  channelBio?: string;
+  created_at?: string;
 }
 
-export type GameCategory = 'math' | 'reading' | 'logic' | 'science' | 'music' | 'art' | 'spelling' | 'memory';
-
-export interface ActivityGame {
+export interface Post {
   id: string;
-  title: string;
-  category: GameCategory;
-  icon: string;
-  color: string;
-  targetAgeGroup: AgeGroup[];
-  description: string;
-  instructions?: string;
+  text: string; // Mapped from 'content' in Supabase
+  authorName: string; // Mapped from 'author_name'
+  authorParish: string; // Mapped from 'author_parish'
+  authorAvatar: string; // Mapped from 'author_avatar'
+  authorId?: string;
+  image?: string; // Mapped from 'image_url'
+  video?: string; // Mapped from 'video' (Bunny Stream URL)
+  createdAt: string; // Mapped from 'created_at'
+  groupId?: string; // Mapped from 'group_id'
+  likesCount?: number;
+  commentsCount?: number;
+  resharesCount?: number;
+  isLiked?: boolean;
+  isReshared?: boolean;
+  quotedPost?: Post | null;
+  reshareKind?: 'reshare' | 'quote';
 }
 
-export interface Badge {
+export interface Message {
   id: string;
-  title: string;
-  description: string;
-  icon: string;
-  category: GameCategory | 'general';
-  requiredCount: number;
+  sender_id: string;
+  receiver_id: string;
+  content: string;
+  created_at: string;
+  sender_name?: string;
+  sender_avatar?: string;
+  is_read?: boolean;
 }
 
-export interface Sticker {
+export interface GroupRoom {
   id: string;
   name: string;
-  emoji: string;
-  color: string;
-  category: string;
+  type: 'bible_study' | 'youth' | 'choir' | 'women_prayer' | 'parish_live';
+  description: string;
+  activeCount: number;
+  icon: string;
+  hostName: string;
+  parish: string;
+  isLive?: boolean;
+  streamUrl?: string;
 }
 
-export interface PlacedSticker {
+export interface LiturgicalDay {
+  date: string;
+  saintName: string;
+  saintTitle: string;
+  saintIconUrl?: string;
+  scriptureRef: string;
+  scriptureText: string;
+  fastingInfo: string;
+  fastingType: 'strict' | 'wine_oil' | 'fish' | 'fast_free';
+  feastLevel?: 'major' | 'minor' | 'daily';
+}
+
+export type ThemeMode = 'dark' | 'light' | 'ancient';
+export type Language = 'en' | 'ar';
+
+export interface EventRsvp {
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  status: 'going' | 'interested' | 'not_going';
+  createdAt: string;
+}
+
+export interface EventItem {
   id: string;
-  stickerId: string;
-  emoji: string;
-  x: number;
-  y: number;
-  scale: number;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  locationType: 'physical' | 'virtual';
+  locationAddress?: string;
+  virtualLink?: string;
+  category: 'liturgy' | 'feast' | 'bible_study' | 'youth' | 'pilgrimage' | 'choir' | 'social';
+  parish: string;
+  hostName: string;
+  hostAvatar?: string;
+  hostId?: string;
+  imageUrl?: string;
+  createdAt: string;
+  rsvps?: EventRsvp[];
+  userRsvpStatus?: 'going' | 'interested' | 'not_going';
+  goingCount: number;
+  interestedCount: number;
 }
 
-export interface ScreenTimeConfig {
-  dailyLimitMinutes: number;
-  sessionDurationMinutes: number;
-  isTimerEnabled: boolean;
-  bedtimeStart: string; // e.g. "20:00"
-  bedtimeEnd: string;   // e.g. "07:00"
-  contentFilters: {
-    videosEnabled: boolean;
-    audiobooksEnabled: boolean;
-    gamesEnabled: boolean;
-    aiStoryEnabled: boolean;
-    maxAgeGroup: AgeGroup;
-  };
-}
-
-export interface UsageReportData {
-  day: string;
-  mediaMinutes: number;
-  gamesMinutes: number;
-  totalMinutes: number;
-}
-
-export interface GameSessionLog {
+export interface NotificationItem {
   id: string;
-  childId: string;
-  gameTitle: string;
-  category: GameCategory;
-  score: number;
-  durationSeconds: number;
-  timestamp: string;
+  userId: string;
+  type: 'message' | 'mention' | 'group_invite' | 'event_invite' | 'moderation_alert' | 'system';
+  title: string;
+  body: string;
+  link?: string;
+  isRead: boolean;
+  createdAt: string;
+  senderName?: string;
+  senderAvatar?: string;
+}
+
+export interface NotificationPreferences {
+  messages: boolean;
+  mentions: boolean;
+  groupInvites: boolean;
+  eventInvites: boolean;
+  moderationAlerts: boolean;
+  emailAlerts: boolean;
+}
+
+export interface ContentReport {
+  id: string;
+  targetType: 'post' | 'comment' | 'user';
+  targetId: string;
+  targetContentPreview?: string;
+  targetAuthorName?: string;
+  targetAuthorId?: string;
+  reporterId: string;
+  reporterName: string;
+  reason: 'inappropriate' | 'spam' | 'uncanonical_heresy' | 'harassment' | 'other';
+  details?: string;
+  status: 'pending' | 'reviewed' | 'action_taken' | 'dismissed';
+  createdAt: string;
+}
+
+export interface ModerationAuditLog {
+  id: string;
+  adminId: string;
+  adminName: string;
+  action: 'dismiss' | 'remove_content' | 'warn_user' | 'ban_user' | 'unban_user';
+  targetId: string;
+  targetType: 'post' | 'comment' | 'user';
+  reason: string;
+  createdAt: string;
+}
+
+export interface UserModerationStatus {
+  userId: string;
+  warningCount: number;
+  isBanned: boolean;
+  banReason?: string;
+  updatedAt: string;
 }
