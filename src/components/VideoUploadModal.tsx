@@ -15,10 +15,10 @@ import {
   Loader2,
   Link as LinkIcon,
   HardDriveUpload,
-  Check,
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
 import { uploadFileToSupabase } from '../lib/supabase';
+import { uploadVideoToBunny } from '../lib/bunny';
 
 import { SUPER_ADMIN_EMAIL } from './AdminModerationModal';
 
@@ -119,7 +119,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
     }
   };
 
-  // Form Submit & Supabase Direct Upload Handler
+  // Form Submit Handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     soundFx.playPop();
@@ -142,21 +142,33 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
 
     setIsUploading(true);
     setUploadProgress(10);
-    setUploadStatusText('Preparing media file for Supabase storage...');
+    setUploadStatusText('Preparing media upload...');
 
     try {
       let finalMediaUrl = '';
       let finalThumbnailUrl = '';
+      let bunnyVideoId = '';
 
-      // 1. Upload Media File to Supabase Storage
+      // 1. Upload Media File to Bunny Stream CDN (or Supabase Audio fallback)
       if (inputMode === 'file' && selectedMediaFile) {
-        setUploadStatusText(`Uploading ${selectedMediaFile.name} (${formatFileSize(selectedMediaFile.size)})...`);
-        finalMediaUrl = await uploadFileToSupabase(
-          selectedMediaFile,
-          'vkid-media',
-          mediaType === 'audiobook' ? 'audio' : 'videos',
-          (pct) => setUploadProgress(Math.floor(pct * 0.7))
-        );
+        if (mediaType === 'video' || mediaType === 'rhyme') {
+          setUploadStatusText(`Uploading ${selectedMediaFile.name} to Bunny Stream CDN...`);
+          setUploadProgress(30);
+
+          const bunnyResult = await uploadVideoToBunny(selectedMediaFile, title.trim());
+          finalMediaUrl = bunnyResult.videoUrl;
+          bunnyVideoId = bunnyResult.videoId;
+          setUploadProgress(70);
+        } else {
+          // Audiobooks upload to Supabase Storage
+          setUploadStatusText(`Uploading audio file (${formatFileSize(selectedMediaFile.size)})...`);
+          finalMediaUrl = await uploadFileToSupabase(
+            selectedMediaFile,
+            'vkid-media',
+            'audio',
+            (pct) => setUploadProgress(Math.floor(pct * 0.7))
+          );
+        }
       } else {
         finalMediaUrl = mediaUrlInput.trim();
         if (finalMediaUrl.includes('youtube.com/watch?v=')) {
@@ -196,7 +208,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         currentUserEmail.toLowerCase().includes('admin')
       );
 
-      const newMedia: MediaItem = {
+      const newMedia: MediaItem & { bunnyId?: string } = {
         id: `m_user_${Date.now()}`,
         title: title.trim(),
         type: mediaType,
@@ -204,6 +216,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         duration: mediaType === 'audiobook' ? '10:00' : '4:30',
         thumbnailUrl: finalThumbnailUrl,
         mediaUrl: finalMediaUrl,
+        bunnyId: bunnyVideoId || undefined,
         targetAgeGroup: targetAges,
         description: description.trim(),
         isPopular: false,
@@ -248,7 +261,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
           <div>
             <h3 className="font-extrabold text-xl text-slate-900">{t('upload_media', 'Upload Kid Content')}</h3>
             <p className="text-xs text-slate-500 font-medium">
-              Direct device upload with Supabase cloud storage & moderation.
+              Direct device upload with Bunny Stream CDN & Supabase moderation.
             </p>
           </div>
         </div>
@@ -259,7 +272,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
             <h4 className="font-extrabold text-lg text-emerald-900">Submitted for Moderation!</h4>
             <p className="text-xs text-emerald-800 font-medium leading-relaxed">
-              Your media file was uploaded to Supabase storage and sent to the VKid moderation queue. It will be published once approved.
+              Your video was uploaded to Bunny Stream CDN and sent to the VKid moderation queue. It will be published once approved.
             </p>
             <button
               onClick={() => {
@@ -327,7 +340,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               </div>
             </div>
 
-            {/* Input Mode Toggle (File Upload vs URL Stream) */}
+            {/* Input Mode Toggle */}
             <div className="flex items-center justify-between bg-slate-100 p-1 rounded-2xl border border-slate-200">
               <button
                 type="button"
@@ -362,7 +375,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               </button>
             </div>
 
-            {/* 1. NATIVE FILE INPUT DROPZONE (Video or Audio File) */}
+            {/* File Dropzone */}
             {inputMode === 'file' ? (
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-1 flex items-center justify-between">
@@ -371,7 +384,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                       ? 'Select Audio File (MP3 / WAV / M4A) *'
                       : 'Select Video File (MP4 / WebM / MOV) *'}
                   </span>
-                  <span className="text-[10px] text-amber-600 font-bold">Native File Upload</span>
+                  <span className="text-[10px] text-amber-600 font-bold">Bunny Stream CDN</span>
                 </label>
 
                 <input
@@ -432,7 +445,6 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                 </div>
               </div>
             ) : (
-              /* URL INPUT FALLBACK */
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-1">
                   Media Stream or Video Embed URL *
@@ -447,7 +459,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               </div>
             )}
 
-            {/* 2. NATIVE FILE INPUT DROPZONE (Thumbnail / Cover Image) */}
+            {/* Thumbnail Upload */}
             <div>
               <label className="block text-xs font-extrabold text-slate-700 mb-1 flex items-center justify-between">
                 <span>Thumbnail / Cover Image (PNG, JPG, WebP)</span>
@@ -553,13 +565,13 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               />
             </div>
 
-            {/* UPLOADING PROGRESS BAR / SPINNER STATE */}
+            {/* Progress Bar */}
             {isUploading && (
               <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3 space-y-2 animate-in fade-in">
                 <div className="flex items-center justify-between text-xs font-extrabold text-amber-900">
                   <span className="flex items-center gap-1.5">
                     <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
-                    <span>{uploadStatusText || 'Uploading to Supabase Storage...'}</span>
+                    <span>{uploadStatusText || 'Uploading to Bunny CDN...'}</span>
                   </span>
                   <span>{uploadProgress}%</span>
                 </div>
@@ -590,7 +602,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Uploading File to Storage...</span>
+                  <span>Uploading to Bunny CDN...</span>
                 </>
               ) : (
                 <>
