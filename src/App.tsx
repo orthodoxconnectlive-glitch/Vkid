@@ -254,7 +254,7 @@ function AppInner() {
         dir={isRtl(currentLanguage) ? 'rtl' : 'ltr'}
         className="min-h-screen min-h-[100dvh] w-full overflow-x-hidden bg-gradient-to-b from-amber-50/60 via-orange-50/30 to-purple-50/40 text-slate-900 pb-12 pt-safe pb-safe font-sans selection:bg-amber-200 transition-all duration-300"
       >
-        {/* Top App Bar with integrated Search Bar and Sidebar Navigation */}
+        {/* Top App Bar */}
         <Header
           currentProfile={currentProfile}
           allProfiles={profiles}
@@ -275,12 +275,20 @@ function AppInner() {
           onOpenAdminModal={() => setIsAdminModalOpen(true)}
           onOpenInstallPwa={() => setIsInstallModalOpen(true)}
           onOpenInviteModal={() => setIsInviteModalOpen(true)}
-          mediaItems={mediaItems}
-          userAccounts={userAccounts}
-          onSelectMedia={(selectedItem) => {
-            speakText(`Playing ${selectedItem.title}`);
-          }}
         />
+
+        {/* Universal Search Bar (Dual Scope: Videos & Users) */}
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3 pb-1">
+          <UniversalSearchBar
+            mediaItems={mediaItems}
+            userAccounts={userAccounts}
+            currentLanguage={currentLanguage}
+            onSelectMedia={(selectedItem) => {
+              // Ensure user stays on kid feed when media selected
+              speakText(`Playing ${selectedItem.title}`);
+            }}
+          />
+        </div>
 
         {/* Main Content View Container */}
         <main className="max-w-7xl mx-auto px-3 sm:px-6 py-2">
