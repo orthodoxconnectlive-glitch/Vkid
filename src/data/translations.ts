@@ -22,7 +22,10 @@ export const SUPPORTED_LANGUAGES: LanguageOption[] = [
   { code: 'ja', name: 'Japanese', nativeName: '日本語', flag: '🇯🇵', dir: 'ltr' },
 ];
 
-export const isRtl = (lang: SupportedLanguage): boolean => lang === 'ar';
+export const isRtl = (lang: SupportedLanguage | string): boolean => {
+  const matched = SUPPORTED_LANGUAGES.find((l) => l.code === lang);
+  return matched ? matched.dir === 'rtl' : lang === 'ar';
+};
 
 export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   en: {
@@ -71,6 +74,25 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     search_placeholder: 'Search videos, rhymes & stories...',
     all_categories: 'All Categories',
     all_ages: 'All Ages',
+    invite_title: 'Invite Friends & Parents',
+    invite_subtitle: 'Share VKid with other families! Help kids learn, play, and explore safely together.',
+    invite_badge_title: 'Family Pass Badge Unlocked!',
+    invite_badge_desc: 'Inviting parents builds a safer online community for everyone.',
+    share_invite_link: 'Share Invitation Link',
+    invite_link: 'Invitation Link',
+    copy: 'Copy',
+    copied: 'Copied!',
+    scan_qr_title: 'Scan with Phone Camera',
+    scan_qr_desc: 'Point camera here to open VKid instantly',
+    download_qr: 'Download QR Code',
+    install_vkid: 'Install VKid App',
+    install_pwa_desc: 'Get instant access to VKid right from your Home Screen!',
+    install_now: 'Install VKid Now',
+    daily_streak: 'Daily Streak',
+    days: 'Days',
+    login: 'Log In',
+    logout: 'Log Out',
+    rewards_center: 'Rewards Center',
   },
   ar: {
     brand_tagline: 'بيئة آمنة للأطفال • العب، تعلم، وانمُ',
@@ -92,7 +114,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     popular_videos: 'الفيديوهات والقصص الشائعة',
     see_all: 'عرض الكل',
     explore_library: 'تصفح المكتبة',
-    play_now: 'العطاء الآن',
+    play_now: 'العب الآن',
     watch_now: 'شاهد الآن',
     start_challenge: 'ابدأ التحدي',
     break_time: 'وقت الاستراحة!',
@@ -118,6 +140,25 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     search_placeholder: 'البحث عن فيديوهات وقصص...',
     all_categories: 'جميع الفئات',
     all_ages: 'جميع الأعمار',
+    invite_title: 'دعوة الأصدقاء وأولياء الأمور',
+    invite_subtitle: 'شارك منصة VKid مع العائلات الأخرى لبناء بيئة تعليمية آمنة.',
+    invite_badge_title: 'تم فتح شارة العائلة!',
+    invite_badge_desc: 'دعوة الأهل تساهم في بناء مجتمع آمن للأطفال.',
+    share_invite_link: 'مشاركة رابط الدعوة',
+    invite_link: 'رابط الدعوة',
+    copy: 'نسخ',
+    copied: 'تم النسخ!',
+    scan_qr_title: 'امسح بكاميرا الهاتف',
+    scan_qr_desc: 'وجّه الكاميرا هنا لفتح تطبيق VKid مباشرة',
+    download_qr: 'تحميل رمز QR',
+    install_vkid: 'تثبيت تطبيق VKid',
+    install_pwa_desc: 'احصل على وصول سريع إلى VKid مباشرة من الشاشة الرئيسية!',
+    install_now: 'تثبيت الآن',
+    daily_streak: 'الحماس اليومي',
+    days: 'أيام',
+    login: 'تسجيل الدخول',
+    logout: 'تسجيل الخروج',
+    rewards_center: 'مركز المكافآت',
   },
   es: {
     brand_tagline: 'Seguro para Niños • Juega, Aprende y Crece',
@@ -544,6 +585,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   },
 };
 
-export const getTranslation = (lang: SupportedLanguage, key: string, fallback?: string): string => {
-  return TRANSLATIONS[lang]?.[key] || TRANSLATIONS['en']?.[key] || fallback || key;
+export const getTranslation = (lang: SupportedLanguage | string, key: string, fallback?: string): string => {
+  const code = (lang || 'en') as SupportedLanguage;
+  return TRANSLATIONS[code]?.[key] || TRANSLATIONS['en']?.[key] || fallback || key;
 };

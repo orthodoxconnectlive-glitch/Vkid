@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { MediaItem, MediaType, AgeGroup } from '../types';
+import { MediaItem, MediaType, AgeGroup, SupportedLanguage } from '../types';
 import { Play, Headphones, Music, Star, Search, X, Volume2, Sparkles, Heart } from 'lucide-react';
 import { soundFx, speakText } from '../utils/soundAndTTS';
+import { getTranslation } from '../data/translations';
 
 interface MediaLibraryProps {
   mediaList: MediaItem[];
@@ -9,6 +10,7 @@ interface MediaLibraryProps {
   favoriteIds: string[];
   onToggleFavorite: (mediaId: string) => void;
   onRecordMediaWatch: (durationMinutes: number) => void;
+  currentLanguage?: SupportedLanguage;
 }
 
 export const MediaLibrary: React.FC<MediaLibraryProps> = ({
@@ -17,7 +19,9 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   favoriteIds,
   onToggleFavorite,
   onRecordMediaWatch,
+  currentLanguage = 'en',
 }) => {
+  const t = (key: string, fallback: string) => getTranslation(currentLanguage, key, fallback);
   const [selectedType, setSelectedType] = useState<MediaType | 'all'>('all');
   const [selectedAge, setSelectedAge] = useState<AgeGroup | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');

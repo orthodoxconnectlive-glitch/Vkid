@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Badge, Sticker, PlacedSticker } from '../types';
+import { Badge, Sticker, PlacedSticker, SupportedLanguage } from '../types';
 import { Trophy, Star, Sparkles, Trash2, Palette, Smile } from 'lucide-react';
 import { soundFx, speakText } from '../utils/soundAndTTS';
+import { getTranslation } from '../data/translations';
 import confetti from 'canvas-confetti';
 
 interface RewardCenterProps {
@@ -9,6 +10,7 @@ interface RewardCenterProps {
   allBadges: Badge[];
   unlockedStickerIds: string[];
   allStickers: Sticker[];
+  currentLanguage?: SupportedLanguage;
 }
 
 export const RewardCenter: React.FC<RewardCenterProps> = ({
@@ -16,7 +18,9 @@ export const RewardCenter: React.FC<RewardCenterProps> = ({
   allBadges,
   unlockedStickerIds,
   allStickers,
+  currentLanguage = 'en',
 }) => {
+  const t = (key: string, fallback: string) => getTranslation(currentLanguage, key, fallback);
   const [activeTab, setActiveTab] = useState<'badges' | 'stickers'>('badges');
   const [sceneBackground, setSceneBackground] = useState<'safari' | 'space' | 'sea'>('safari');
   const [placedStickers, setPlacedStickers] = useState<PlacedSticker[]>([
