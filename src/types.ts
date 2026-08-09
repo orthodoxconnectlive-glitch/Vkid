@@ -50,7 +50,7 @@ export interface UserAccount {
   channelBio?: string;
 }
 
-export type GameCategory = 'math' | 'reading' | 'logic' | 'science' | 'music' | 'art' | 'spelling' | 'memory';
+export type GameCategory = 'math' | 'spelling' | 'memory';
 
 export interface ActivityGame {
   id: string;
@@ -60,7 +60,6 @@ export interface ActivityGame {
   color: string;
   targetAgeGroup: AgeGroup[];
   description: string;
-  instructions?: string;
 }
 
 export interface Badge {
