@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
 import { AppUser } from '../context/AuthContext';
+import { checkIsAdmin } from './AdminModerationModal';
+import { useTvNavigation } from '../hooks/useTvNavigation';
 
 interface SidebarNavigationProps {
   isOpen: boolean;
@@ -60,6 +62,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   isAuthenticated,
   openAuthModal,
   logout,
+  currentUserEmail,
+  adminEmails,
   isAdmin,
   pendingCount,
   onOpenUploadModal,
@@ -74,6 +78,28 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   onToggleTts,
 }) => {
   const t = (key: string, fallback?: string) => getTranslation(currentLanguage, key, fallback);
+
+  const effectiveEmail = user?.email || currentUserEmail;
+  const effectiveRole = user?.role;
+  const effectiveAppMetaRole = user?.app_metadata?.role || user?.user_metadata?.role;
+
+  const hasAdminRights = isAuthenticated && checkIsAdmin(
+    effectiveEmail,
+    effectiveRole,
+    effectiveAppMetaRole,
+    adminEmails
+  );
+
+  // Close sidebar drawer on Smart TV remote Back key
+  useTvNavigation({
+    onBack: () => {
+      if (isOpen) {
+        soundFx.playPop();
+        onClose();
+      }
+    },
+    enabled: isOpen,
+  });
 
   if (!isOpen) return null;
 
@@ -244,7 +270,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
             </button>
 
             {/* Admin Moderation Panel */}
-            {isAdmin && (
+            {hasAdminRights && (
               <button
                 onClick={() => {
                   soundFx.playPop();

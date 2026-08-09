@@ -107,6 +107,43 @@ Return a JSON object with:
   }
 });
 
+// Media Database Storage API
+let customUploadedMedia: any[] = [];
+
+app.get("/api/media", (req, res) => {
+  res.json({ success: true, data: customUploadedMedia });
+});
+
+app.post("/api/media", (req, res) => {
+  try {
+    const newItem = req.body;
+    if (!newItem || !newItem.id || !newItem.title) {
+      return res.status(400).json({ success: false, error: "Invalid media item metadata" });
+    }
+    // Preserve passed status or default to pending_approval
+    newItem.status = newItem.status || 'pending_approval';
+    newItem.createdAt = newItem.createdAt || new Date().toISOString();
+
+    // Check if item already exists
+    const existingIndex = customUploadedMedia.findIndex((m) => m.id === newItem.id);
+    if (existingIndex >= 0) {
+      customUploadedMedia[existingIndex] = newItem;
+    } else {
+      customUploadedMedia.unshift(newItem);
+    }
+
+    res.json({ success: true, data: newItem });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete("/api/media/:id", (req, res) => {
+  const { id } = req.params;
+  customUploadedMedia = customUploadedMedia.filter((m) => m.id !== id);
+  res.json({ success: true });
+});
+
 // Icon alias fallback for legacy manifest icons
 app.get(["/icon-192.png", "/icon-512.png"], (req, res) => {
   const publicIcon = path.join(process.cwd(), "public", "icon.svg");

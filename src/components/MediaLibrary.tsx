@@ -3,6 +3,8 @@ import { MediaItem, MediaType, AgeGroup, SupportedLanguage } from '../types';
 import { Play, Headphones, Music, Star, Search, X, Volume2, Sparkles, Heart } from 'lucide-react';
 import { soundFx, speakText } from '../utils/soundAndTTS';
 import { getTranslation } from '../data/translations';
+import { TvVideoPlayer } from './TvVideoPlayer';
+import { useTvNavigation } from '../hooks/useTvNavigation';
 
 interface MediaLibraryProps {
   mediaList: MediaItem[];
@@ -27,11 +29,18 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMedia, setActiveMedia] = useState<MediaItem | null>(null);
 
-  const filteredList = mediaList.filter((item) => {
-    // Only show approved or default media items in public search and library
-    const isApproved = item.status === 'approved' || !item.status;
-    if (!isApproved) return false;
+  // Smart TV Remote D-Pad Navigation Back Key Listener
+  useTvNavigation({
+    onBack: () => {
+      if (activeMedia) {
+        soundFx.playPop();
+        setActiveMedia(null);
+      }
+    },
+    enabled: !!activeMedia,
+  });
 
+  const filteredList = mediaList.filter((item) => {
     const matchesType = selectedType === 'all' || item.type === selectedType;
     const matchesAge = selectedAge === 'all' || item.targetAgeGroup.includes(selectedAge);
     const matchesSearch =
@@ -137,22 +146,46 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
       </div>
 
       {/* Media Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        {filteredList.map((item) => {
-          const isFav = favoriteIds.includes(item.id);
-          return (
-            <div
-              key={item.id}
-              className="bg-white rounded-3xl overflow-hidden border-2 border-amber-200 shadow-md hover:shadow-xl transition-all duration-300 group flex flex-col justify-between"
-            >
-              {/* Thumbnail Container */}
-              <div className="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer" onClick={() => handleMediaClick(item)}>
-                <img
-                  src={item.thumbnailUrl}
-                  alt={item.title}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90 group-hover:opacity-100"
-                />
+      {filteredList.length === 0 ? (
+        <div className="bg-white rounded-3xl p-10 text-center border-2 border-amber-200 shadow-sm space-y-3">
+          <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+            <Play className="w-8 h-8 fill-current" />
+          </div>
+          <h3 className="font-extrabold text-lg text-slate-800">No videos uploaded yet</h3>
+          <p className="text-xs text-slate-500 font-medium max-w-sm mx-auto">
+            Try adjusting your search query or age filters above, or upload a new kid-friendly video!
+          </p>
+          <button
+            onClick={() => {
+              setSelectedType('all');
+              setSelectedAge('all');
+              setSearchQuery('');
+            }}
+            className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs rounded-full shadow transition-all cursor-pointer"
+          >
+            Clear Filters
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          {filteredList.map((item) => {
+            const isFav = favoriteIds.includes(item.id);
+            return (
+              <div
+                key={item.id}
+                className="bg-white rounded-3xl overflow-hidden border-2 border-amber-200 shadow-md hover:shadow-xl transition-all duration-300 group flex flex-col justify-between"
+              >
+                {/* Thumbnail Container */}
+                <div className="relative aspect-video bg-slate-900 overflow-hidden cursor-pointer" onClick={() => handleMediaClick(item)}>
+                  <img
+                    src={item.thumbnailUrl}
+                    alt={item.title}
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      e.currentTarget.src = 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=600&q=80';
+                    }}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90 group-hover:opacity-100"
+                  />
 
                 {/* Media Type Badge */}
                 <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md text-white px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1 border border-white/20">
@@ -161,6 +194,13 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   {item.type === 'rhyme' && <Music className="w-3 h-3 text-purple-400" />}
                   <span>{item.type}</span>
                 </div>
+
+                {/* Pending Moderation Badge */}
+                {(item.status === 'pending_approval' || item.status === 'pending' || item.status === 'pending_moderation') && (
+                  <div className="absolute bottom-3 left-3 bg-amber-500/90 backdrop-blur-md text-white px-2 py-0.5 rounded-md text-[10px] font-black flex items-center gap-1 shadow border border-amber-300 z-10">
+                    <span>⏳ Pending Review</span>
+                  </div>
+                )}
 
                 {/* Duration Badge */}
                 <span className="absolute bottom-3 right-3 bg-black/70 text-white px-2 py-0.5 rounded-md text-[10px] font-bold">
@@ -218,6 +258,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
           );
         })}
       </div>
+      )}
 
       {/* Media Player Modal Overlay */}
       {activeMedia && (
@@ -244,12 +285,10 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
             <div className="p-4 sm:p-6 bg-slate-900">
               {activeMedia.type === 'video' || activeMedia.type === 'rhyme' ? (
                 <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-inner">
-                  <iframe
-                    src={activeMedia.mediaUrl}
+                  <TvVideoPlayer
+                    mediaUrl={activeMedia.mediaUrl}
                     title={activeMedia.title}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                    className="w-full h-full border-0"
+                    posterUrl={activeMedia.thumbnailUrl}
                   />
                 </div>
               ) : (

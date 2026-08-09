@@ -23,6 +23,9 @@ import {
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
 import { UserProfileModal } from './UserProfileModal';
+import { useAuth } from '../context/AuthContext';
+import { TvVideoPlayer } from './TvVideoPlayer';
+import { useTvNavigation } from '../hooks/useTvNavigation';
 
 interface AdminModerationModalProps {
   currentLanguage: SupportedLanguage;
@@ -39,7 +42,50 @@ interface AdminModerationModalProps {
   onClose: () => void;
 }
 
+export const SUPER_ADMIN_WHITELIST = [
+  'orthodoxconnect.live@gmail.com',
+  'lucasautocode@gmail.com',
+];
+
 export const SUPER_ADMIN_EMAIL = 'orthodoxconnect.live@gmail.com';
+
+export function isSuperAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const clean = email.trim().toLowerCase();
+  return SUPER_ADMIN_WHITELIST.some((e) => e.toLowerCase() === clean);
+}
+
+export function checkIsAdmin(
+  email?: string | null,
+  role?: string | null,
+  appMetadataRole?: string | null,
+  adminEmails: string[] = []
+): boolean {
+  if (!email) return false;
+  const cleanEmail = email.trim().toLowerCase();
+
+  // 1. Super Admin Whitelist check
+  if (isSuperAdminEmail(cleanEmail)) return true;
+
+  // 2. Explicit admin / super_admin role check
+  const cleanRole = (role || '').trim().toLowerCase();
+  const cleanAppRole = (appMetadataRole || '').trim().toLowerCase();
+  if (
+    cleanRole === 'admin' ||
+    cleanRole === 'super_admin' ||
+    cleanAppRole === 'admin' ||
+    cleanAppRole === 'super_admin'
+  ) {
+    return true;
+  }
+
+  // 3. Dynamic adminEmails array
+  if (adminEmails.some((e) => e.toLowerCase() === cleanEmail)) {
+    return true;
+  }
+
+  return false;
+}
 
 export const AdminModerationModal: React.FC<AdminModerationModalProps> = ({
   currentLanguage,
@@ -55,6 +101,7 @@ export const AdminModerationModal: React.FC<AdminModerationModalProps> = ({
   onToggleUserAdminRole,
   onClose,
 }) => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'pending' | 'published' | 'users' | 'admins'>('pending');
   const [pendingTypeFilter, setPendingTypeFilter] = useState<MediaType | 'all'>('all');
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -64,19 +111,61 @@ export const AdminModerationModal: React.FC<AdminModerationModalProps> = ({
   const [previewMedia, setPreviewMedia] = useState<MediaItem | null>(null);
   const [selectedProfileUser, setSelectedProfileUser] = useState<UserAccount | null>(null);
 
+  // TV Remote D-Pad Navigation Back Listener
+  useTvNavigation({
+    onBack: () => {
+      if (previewMedia) {
+        setPreviewMedia(null);
+      } else if (selectedProfileUser) {
+        setSelectedProfileUser(null);
+      } else {
+        onClose();
+      }
+    },
+  });
+
   const t = (key: string, fallback?: string) => getTranslation(currentLanguage, key, fallback);
 
-  const isSuperAdmin = currentUserEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-  const isAdmin = isSuperAdmin || adminEmails.some((e) => e.toLowerCase() === currentUserEmail.toLowerCase());
+  const effectiveEmail = user?.email || currentUserEmail || '';
+  const effectiveRole = user?.role;
+  const effectiveAppMetaRole = user?.app_metadata?.role || user?.user_metadata?.role;
+
+  const hasAdminAccess = checkIsAdmin(effectiveEmail, effectiveRole, effectiveAppMetaRole, adminEmails);
+  const isSuperAdmin = isSuperAdminEmail(effectiveEmail);
+
+  if (!hasAdminAccess) {
+    return (
+      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border-4 border-rose-300 shadow-2xl text-center space-y-4 animate-in fade-in zoom-in-95">
+          <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+            <ShieldAlert className="w-8 h-8" />
+          </div>
+          <h3 className="font-extrabold text-xl text-slate-900">Access Denied</h3>
+          <p className="text-sm text-slate-600 font-medium">
+            You do not have administrative privileges to access the Admin Moderation Panel. Please sign in with an authorized administrator account.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm rounded-2xl shadow transition-all active:scale-95 cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isPendingStatus = (status?: string) =>
+    status === 'pending_approval' || status === 'pending' || status === 'pending_moderation';
 
   // Filter pending items by type
   const pendingVideos = mediaItems.filter((item) => {
-    if (item.status !== 'pending_approval') return false;
+    if (!isPendingStatus(item.status)) return false;
     if (pendingTypeFilter === 'all') return true;
     return item.type === pendingTypeFilter;
   });
 
-  const publishedVideos = mediaItems.filter((item) => item.status === 'approved' || !item.status);
+  const publishedVideos = mediaItems.filter((item) => item.status === 'approved' || item.status === 'published' || !item.status);
 
   // Filter users directory
   const filteredUsers = userAccounts.filter((u) => {
@@ -122,29 +211,6 @@ export const AdminModerationModal: React.FC<AdminModerationModalProps> = ({
       onRemoveAdmin(email);
     }
   };
-
-  if (!isAdmin) {
-    return (
-      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl max-w-md w-full border-4 border-rose-400 p-6 shadow-2xl text-center space-y-4">
-          <ShieldAlert className="w-16 h-16 text-rose-500 mx-auto" />
-          <h3 className="font-extrabold text-xl text-slate-900">Access Restricted</h3>
-          <p className="text-xs text-slate-600 font-medium">
-            The Admin Dashboard requires Admin or Super Admin privileges ({SUPER_ADMIN_EMAIL}).
-          </p>
-          <p className="text-xs font-bold text-slate-500 bg-slate-100 p-2.5 rounded-xl">
-            Currently logged in as: <span className="text-rose-600 font-extrabold">{currentUserEmail}</span>
-          </p>
-          <button
-            onClick={onClose}
-            className="w-full bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs py-2.5 rounded-xl shadow"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
@@ -195,7 +261,7 @@ export const AdminModerationModal: React.FC<AdminModerationModalProps> = ({
             }`}
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>Pending Queue ({mediaItems.filter((i) => i.status === 'pending_approval').length})</span>
+            <span>Pending Queue ({mediaItems.filter((i) => isPendingStatus(i.status)).length})</span>
           </button>
 
           <button
@@ -697,12 +763,10 @@ export const AdminModerationModal: React.FC<AdminModerationModalProps> = ({
               <div className="w-full rounded-2xl overflow-hidden bg-black border border-slate-800 p-2">
                 {previewMedia.type === 'video' || previewMedia.type === 'rhyme' ? (
                   <div className="aspect-video w-full rounded-xl overflow-hidden bg-black">
-                    <iframe
-                      src={previewMedia.mediaUrl}
+                    <TvVideoPlayer
+                      mediaUrl={previewMedia.mediaUrl}
                       title={previewMedia.title}
-                      className="w-full h-full border-0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
+                      posterUrl={previewMedia.thumbnailUrl}
                     />
                   </div>
                 ) : (

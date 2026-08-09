@@ -268,38 +268,40 @@ export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
                   </h3>
                   <button
                     onClick={() => handleTabChange('games')}
-                    className="text-xs font-black bg-amber-100 text-amber-900 px-3 py-1.5 rounded-full hover:bg-amber-200 transition-all flex items-center gap-1 shadow-sm"
+                    className="text-xs font-black bg-amber-100 text-amber-900 px-3 py-1.5 rounded-full hover:bg-amber-200 transition-all flex items-center gap-1 shadow-sm cursor-pointer"
                   >
                     <span>See All ({gamesList.length})</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* Horizontal Swipeable Rail on Mobile, Grid on Desktop */}
-                <div className="flex overflow-x-auto snap-x snap-mandatory space-x-4 pb-4 scrollbar-none sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:space-x-0 sm:pb-0">
-                  {gamesList.slice(0, 6).map((g) => (
-                    <div
+                {/* Compact Grid of Interactive Icon Buttons */}
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 sm:gap-4 pt-1">
+                  {gamesList.slice(0, 8).map((g) => (
+                    <button
                       key={g.id}
                       onClick={() => handleLaunchGame(g.id)}
-                      className={`w-[80vw] max-w-[280px] shrink-0 snap-center sm:w-auto sm:shrink sm:max-w-none bg-gradient-to-br ${g.color} text-white rounded-3xl p-5 shadow-md hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 cursor-pointer flex flex-col justify-between space-y-4`}
+                      className="group relative flex flex-col items-center cursor-pointer text-left focus:outline-none"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-3xl sm:text-4xl p-2 bg-white/20 rounded-2xl backdrop-blur-md">{g.icon}</span>
-                        <span className="bg-black/20 text-white text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border border-white/20">
+                      <div
+                        className={`w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-gradient-to-br ${g.color} p-2 text-white shadow-md hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95 flex flex-col items-center justify-between relative overflow-hidden border-2 border-white/50`}
+                      >
+                        {/* Subtle Category Badge */}
+                        <span className="bg-black/30 backdrop-blur-sm text-white text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider self-end border border-white/20">
                           {g.category}
+                        </span>
+
+                        {/* Prominent Center Icon */}
+                        <span className="text-3xl sm:text-4xl my-auto drop-shadow-md group-hover:scale-110 transition-transform">
+                          {g.icon}
                         </span>
                       </div>
 
-                      <div>
-                        <h4 className="font-black text-base sm:text-lg text-white mb-1">{g.title}</h4>
-                        <p className="text-xs text-white/90 font-medium leading-relaxed line-clamp-2">{g.description}</p>
-                      </div>
-
-                      <button className="w-full bg-white text-slate-900 font-extrabold text-xs py-2.5 rounded-2xl shadow transition-transform active:scale-95 flex items-center justify-center gap-1.5">
-                        <Play className="w-3.5 h-3.5 fill-current text-emerald-600" />
-                        <span>Play Now</span>
-                      </button>
-                    </div>
+                      {/* Small Title Label Below Icon Button */}
+                      <span className="mt-1.5 text-center font-extrabold text-xs text-slate-800 line-clamp-1 group-hover:text-emerald-600 transition-colors w-24 sm:w-28">
+                        {g.title}
+                      </span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -440,45 +442,34 @@ export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
                 </div>
               </div>
 
-              {/* Mini-Games Grid (Displaying 20 games) */}
+              {/* Mini-Games Grid */}
               {filteredGames.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3 sm:gap-4 pt-1">
                   {filteredGames.map((g) => (
-                    <div
+                    <button
                       key={g.id}
                       onClick={() => handleLaunchGame(g.id)}
-                      className={`bg-gradient-to-br ${g.color} text-white rounded-3xl p-5 shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 cursor-pointer flex flex-col justify-between space-y-4 relative overflow-hidden group`}
+                      className="group relative flex flex-col items-center cursor-pointer text-left focus:outline-none"
                     >
-                      <div className="flex items-center justify-between relative z-10">
-                        <span className="text-4xl p-2.5 bg-white/20 rounded-2xl backdrop-blur-md shadow-inner group-hover:scale-110 transition-transform">
-                          {g.icon}
-                        </span>
-                        <span className="bg-black/25 text-white text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider border border-white/20">
+                      <div
+                        className={`w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-gradient-to-br ${g.color} p-2 text-white shadow-md hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95 flex flex-col items-center justify-between relative overflow-hidden border-2 border-white/50`}
+                      >
+                        {/* Subtle Category Badge */}
+                        <span className="bg-black/30 backdrop-blur-sm text-white text-[8px] sm:text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider self-end border border-white/20">
                           {g.category}
                         </span>
+
+                        {/* Prominent Center Icon */}
+                        <span className="text-3xl sm:text-4xl my-auto drop-shadow-md group-hover:scale-110 transition-transform">
+                          {g.icon}
+                        </span>
                       </div>
 
-                      <div className="relative z-10">
-                        <h3 className="font-black text-lg text-white mb-1.5 leading-snug">{g.title}</h3>
-                        <p className="text-xs text-white/90 font-medium leading-relaxed line-clamp-3">{g.description}</p>
-                      </div>
-
-                      <div className="space-y-3 relative z-10">
-                        {/* Target Age Group Pills */}
-                        <div className="flex flex-wrap gap-1">
-                          {g.targetAgeGroup.map((ag) => (
-                            <span key={ag} className="bg-white/20 text-white text-[9px] font-bold px-2 py-0.5 rounded-full">
-                              {ag} yrs
-                            </span>
-                          ))}
-                        </div>
-
-                        <button className="w-full bg-white text-slate-900 font-extrabold text-xs py-2.5 rounded-2xl shadow-md transition-all active:scale-95 group-hover:bg-amber-300 flex items-center justify-center gap-1.5">
-                          <Play className="w-3.5 h-3.5 fill-current text-emerald-600" />
-                          <span>Play Now</span>
-                        </button>
-                      </div>
-                    </div>
+                      {/* Small Title Label Below Icon Button */}
+                      <span className="mt-1.5 text-center font-extrabold text-xs text-slate-800 line-clamp-1 group-hover:text-emerald-600 transition-colors w-24 sm:w-28">
+                        {g.title}
+                      </span>
+                    </button>
                   ))}
                 </div>
               ) : (

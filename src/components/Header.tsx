@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChildProfile, SupportedLanguage, MediaItem, UserAccount } from '../types';
 import { getTranslation } from '../data/translations';
-import { SUPER_ADMIN_EMAIL } from './AdminModerationModal';
+import { SUPER_ADMIN_EMAIL, checkIsAdmin } from './AdminModerationModal';
 import { Clock, ChevronDown, Menu } from 'lucide-react';
 import { soundFx, speakText } from '../utils/soundAndTTS';
 import { useAuth } from '../context/AuthContext';
@@ -69,8 +69,9 @@ export const Header: React.FC<HeaderProps> = ({
   const t = (key: string, fallback?: string) => getTranslation(currentLanguage, key, fallback);
 
   const effectiveEmail = user?.email || currentUserEmail;
-  const isSuperAdmin = effectiveEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-  const isAdmin = isSuperAdmin || adminEmails.some((e) => e.toLowerCase() === effectiveEmail.toLowerCase());
+  const effectiveRole = user?.role;
+  const effectiveAppMetaRole = user?.app_metadata?.role || user?.user_metadata?.role;
+  const isAdmin = isAuthenticated && checkIsAdmin(effectiveEmail, effectiveRole, effectiveAppMetaRole, adminEmails);
 
   const percentLeft = Math.max(0, Math.min(100, (remainingMinutes / totalDailyMinutes) * 100));
 

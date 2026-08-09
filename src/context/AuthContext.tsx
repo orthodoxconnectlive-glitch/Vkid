@@ -1,12 +1,20 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { SUPER_ADMIN_EMAIL } from '../components/AdminModerationModal';
+import { SUPER_ADMIN_EMAIL, checkIsAdmin } from '../components/AdminModerationModal';
 
 export interface AppUser {
   id: string;
   email: string;
   fullName?: string;
-  role: 'parent' | 'admin';
+  role: 'parent' | 'admin' | 'super_admin' | string;
+  app_metadata?: {
+    role?: string;
+    [key: string]: any;
+  };
+  user_metadata?: {
+    role?: string;
+    [key: string]: any;
+  };
   avatarUrl?: string;
 }
 
@@ -42,13 +50,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (mounted && data.session?.user) {
             const sbUser = data.session.user;
             const userEmail = sbUser.email || '';
-            const isSuper = userEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+            const appMetaRole = sbUser.app_metadata?.role;
+            const userMetaRole = sbUser.user_metadata?.role;
+            const isAdmin = checkIsAdmin(userEmail, (sbUser as any).role || userMetaRole, appMetaRole);
 
             setUser({
               id: sbUser.id,
               email: userEmail,
               fullName: sbUser.user_metadata?.full_name || userEmail.split('@')[0],
-              role: isSuper ? 'admin' : (sbUser.user_metadata?.role as 'parent' | 'admin') || 'parent',
+              role: isAdmin ? 'admin' : ((userMetaRole || 'parent') as string),
+              app_metadata: sbUser.app_metadata,
+              user_metadata: sbUser.user_metadata,
               avatarUrl: sbUser.user_metadata?.avatar_url,
             });
           }
@@ -80,13 +92,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (session?.user) {
           const sbUser = session.user;
           const userEmail = sbUser.email || '';
-          const isSuper = userEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+          const appMetaRole = sbUser.app_metadata?.role;
+          const userMetaRole = sbUser.user_metadata?.role;
+          const isAdmin = checkIsAdmin(userEmail, (sbUser as any).role || userMetaRole, appMetaRole);
 
           setUser({
             id: sbUser.id,
             email: userEmail,
             fullName: sbUser.user_metadata?.full_name || userEmail.split('@')[0],
-            role: isSuper ? 'admin' : (sbUser.user_metadata?.role as 'parent' | 'admin') || 'parent',
+            role: isAdmin ? 'admin' : ((userMetaRole || 'parent') as string),
+            app_metadata: sbUser.app_metadata,
+            user_metadata: sbUser.user_metadata,
             avatarUrl: sbUser.user_metadata?.avatar_url,
           });
         } else {
@@ -129,23 +145,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data.user) {
         const userEmail = data.user.email || cleanEmail;
-        const isSuper = userEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+        const appMetaRole = data.user.app_metadata?.role;
+        const userMetaRole = data.user.user_metadata?.role;
+        const isAdmin = checkIsAdmin(userEmail, (data.user as any).role || userMetaRole, appMetaRole);
+
         setUser({
           id: data.user.id,
           email: userEmail,
           fullName: data.user.user_metadata?.full_name || userEmail.split('@')[0],
-          role: isSuper ? 'admin' : 'parent',
+          role: isAdmin ? 'admin' : 'parent',
+          app_metadata: data.user.app_metadata,
+          user_metadata: data.user.user_metadata,
         });
       }
       return { success: true };
     } else {
       // Fallback local auth simulation
-      const isSuper = cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+      const isAdmin = checkIsAdmin(cleanEmail, 'parent');
       const mockUser: AppUser = {
         id: `usr_${Date.now()}`,
         email: cleanEmail,
         fullName: cleanEmail.split('@')[0],
-        role: isSuper ? 'admin' : 'parent',
+        role: isAdmin ? 'admin' : 'parent',
       };
       setUser(mockUser);
       localStorage.setItem('vkid_auth_user', JSON.stringify(mockUser));
@@ -177,12 +198,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (data.user) {
-        const isSuper = cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+        const isAdmin = checkIsAdmin(cleanEmail, 'parent');
         const appUserData: AppUser = {
           id: data.user.id,
           email: cleanEmail,
           fullName: fullName || cleanEmail.split('@')[0],
-          role: isSuper ? 'admin' : 'parent',
+          role: isAdmin ? 'admin' : 'parent',
+          app_metadata: data.user.app_metadata,
+          user_metadata: data.user.user_metadata,
         };
 
         if (data.session) {
@@ -209,12 +232,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
     } else {
       // Fallback local auth simulation
-      const isSuper = cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase();
+      const isAdmin = checkIsAdmin(cleanEmail, 'parent');
       const mockUser: AppUser = {
         id: `usr_${Date.now()}`,
         email: cleanEmail,
         fullName: fullName || cleanEmail.split('@')[0],
-        role: isSuper ? 'admin' : 'parent',
+        role: isAdmin ? 'admin' : 'parent',
       };
       setUser(mockUser);
       localStorage.setItem('vkid_auth_user', JSON.stringify(mockUser));

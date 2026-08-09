@@ -34,3 +34,24 @@ html, body {
   width: 100%;
   overflow-x: hidden;
 }
+
+/* Smart TV High-Visibility Focus Outline for Remote D-Pad Navigation */
+:focus-visible,
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 4px solid #f59e0b !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.8) !important;
+  transform: scale(1.03);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Ensure smooth TV focus rendering on legacy browser engines */
+button, a, input, select {
+  -webkit-appearance: none;
+  touch-action: manipulation;
+}
+

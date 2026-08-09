@@ -20,6 +20,8 @@ import {
 import { soundFx } from '../utils/soundAndTTS';
 import { uploadFileToSupabase } from '../lib/supabase';
 
+import { SUPER_ADMIN_EMAIL } from './AdminModerationModal';
+
 interface VideoUploadModalProps {
   currentLanguage: SupportedLanguage;
   currentUserEmail: string;
@@ -189,6 +191,11 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
       setUploadProgress(100);
       setUploadStatusText('Finalizing submission...');
 
+      const isUserAdmin = currentUserEmail && (
+        currentUserEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
+        currentUserEmail.toLowerCase().includes('admin')
+      );
+
       const newMedia: MediaItem = {
         id: `m_user_${Date.now()}`,
         title: title.trim(),
@@ -200,7 +207,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         targetAgeGroup: targetAges,
         description: description.trim(),
         isPopular: false,
-        status: 'pending_approval',
+        status: isUserAdmin ? 'approved' : 'pending_approval',
         uploadedBy: currentUserEmail || 'parent@vkid.app',
         createdAt: new Date().toISOString(),
       };

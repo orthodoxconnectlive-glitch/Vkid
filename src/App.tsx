@@ -20,13 +20,21 @@ import { ParentDashboard } from './components/ParentalControls/ParentDashboard';
 import { FlutterArchitectureDrawer } from './components/FlutterExport/FlutterArchitectureDrawer';
 import { AiStoryModal } from './components/AiStoryModal';
 import { VideoUploadModal } from './components/VideoUploadModal';
-import { AdminModerationModal, SUPER_ADMIN_EMAIL } from './components/AdminModerationModal';
+import { AdminModerationModal, SUPER_ADMIN_EMAIL, SUPER_ADMIN_WHITELIST, checkIsAdmin } from './components/AdminModerationModal';
 import { UniversalSearchBar } from './components/UniversalSearchBar';
 import { AuthModal } from './components/AuthModal';
 import { InstallPwaModal } from './components/InstallPwaModal';
 import { InviteFriendsModal } from './components/InviteFriendsModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { setTtsEnabled, soundFx, speakText } from './utils/soundAndTTS';
+import { useTvNavigation } from './hooks/useTvNavigation';
+import {
+  getInitialMediaItems,
+  fetchLatestMediaItems,
+  saveMediaItemToStorage,
+  approveMediaItemInStorage,
+  rejectMediaItemInStorage,
+} from './lib/mediaService';
 
 function AppInner() {
   const [profiles, setProfiles] = useState<ChildProfile[]>(INITIAL_CHILD_PROFILES);
@@ -37,7 +45,16 @@ function AppInner() {
   const { user } = useAuth();
 
   // Video Media State & Admin Moderation Queue
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>(MEDIA_LIBRARY);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>(getInitialMediaItems);
+
+  // Sync latest media items from API/Supabase on mount
+  useEffect(() => {
+    fetchLatestMediaItems().then((latest) => {
+      if (latest && latest.length > 0) {
+        setMediaItems(latest);
+      }
+    });
+  }, []);
 
   // User Accounts Directory State
   const [userAccounts, setUserAccounts] = useState<UserAccount[]>(MOCK_USERS);
@@ -46,9 +63,9 @@ function AppInner() {
   const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>('en');
 
   // User Accounts & Admin Privileges State
-  const currentUserEmail = user?.email || SUPER_ADMIN_EMAIL;
+  const currentUserEmail = user?.email || '';
   const [adminEmails, setAdminEmails] = useState<string[]>([
-    SUPER_ADMIN_EMAIL,
+    ...SUPER_ADMIN_WHITELIST,
     'moderator@vkid.app',
   ]);
 
@@ -84,6 +101,20 @@ function AppInner() {
   const currentProfile = profiles.find((p) => p.id === currentProfileId) || profiles[0];
 
   const pendingVideosCount = mediaItems.filter((i) => i.status === 'pending_approval').length;
+
+  // Global Smart TV Remote Back Key modal dismiss handler
+  useTvNavigation({
+    onBack: () => {
+      if (isAdminModalOpen) setIsAdminModalOpen(false);
+      else if (isParentDashboardOpen) setIsParentDashboardOpen(false);
+      else if (isParentPinOpen) setIsParentPinOpen(false);
+      else if (isAiStoryOpen) setIsAiStoryOpen(false);
+      else if (isUploadModalOpen) setIsUploadModalOpen(false);
+      else if (isCodeExportOpen) setIsCodeExportOpen(false);
+      else if (isInstallModalOpen) setIsInstallModalOpen(false);
+      else if (isInviteModalOpen) setIsInviteModalOpen(false);
+    },
+  });
 
   // Sync remaining minutes whenever config session duration changes
   useEffect(() => {
@@ -186,21 +217,32 @@ function AppInner() {
     setIsParentDashboardOpen(true);
   };
 
-  // Video Upload Submission (Defaults to pending_approval)
-  const handleUploadSubmit = (newVideo: MediaItem) => {
-    setMediaItems((prev) => [newVideo, ...prev]);
+  // Video Upload Submission (Assigned published status & persisted)
+  const handleUploadSubmit = async (newVideo: MediaItem) => {
+    const published = await saveMediaItemToStorage(newVideo);
+    setMediaItems((prev) => [published, ...prev.filter((i) => i.id !== published.id)]);
+    const latest = await fetchLatestMediaItems();
+    if (latest && latest.length > 0) {
+      setMediaItems(latest);
+    }
   };
 
   // Video Admin Approval
-  const handleApproveVideo = (videoId: string) => {
+  const handleApproveVideo = async (videoId: string) => {
     setMediaItems((prev) =>
       prev.map((item) => (item.id === videoId ? { ...item, status: 'approved' } : item))
     );
+    await approveMediaItemInStorage(videoId);
+    const latest = await fetchLatestMediaItems();
+    if (latest && latest.length > 0) {
+      setMediaItems(latest);
+    }
   };
 
   // Video Admin Rejection / Deletion
-  const handleRejectVideo = (videoId: string) => {
+  const handleRejectVideo = async (videoId: string) => {
     setMediaItems((prev) => prev.filter((item) => item.id !== videoId));
+    await rejectMediaItemInStorage(videoId);
   };
 
   // Toggle user account status (Active <-> Suspended)
