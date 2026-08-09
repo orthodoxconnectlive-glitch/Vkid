@@ -22,13 +22,19 @@ import { AiStoryModal } from './components/AiStoryModal';
 import { VideoUploadModal } from './components/VideoUploadModal';
 import { AdminModerationModal, SUPER_ADMIN_EMAIL } from './components/AdminModerationModal';
 import { UniversalSearchBar } from './components/UniversalSearchBar';
+import { AuthModal } from './components/AuthModal';
+import { InstallPwaModal } from './components/InstallPwaModal';
+import { InviteFriendsModal } from './components/InviteFriendsModal';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { setTtsEnabled, soundFx, speakText } from './utils/soundAndTTS';
 
-export default function App() {
+function AppInner() {
   const [profiles, setProfiles] = useState<ChildProfile[]>(INITIAL_CHILD_PROFILES);
   const [currentProfileId, setCurrentProfileId] = useState<string>('child_1');
   const [screenTimeConfig, setScreenTimeConfig] = useState<ScreenTimeConfig>(DEFAULT_SCREEN_TIME_CONFIG);
   const [parentPin, setParentPin] = useState<string>('1234');
+
+  const { user } = useAuth();
 
   // Video Media State & Admin Moderation Queue
   const [mediaItems, setMediaItems] = useState<MediaItem[]>(MEDIA_LIBRARY);
@@ -40,7 +46,7 @@ export default function App() {
   const [currentLanguage, setCurrentLanguage] = useState<SupportedLanguage>('en');
 
   // User Accounts & Admin Privileges State
-  const [currentUserEmail, setCurrentUserEmail] = useState<string>(SUPER_ADMIN_EMAIL);
+  const currentUserEmail = user?.email || SUPER_ADMIN_EMAIL;
   const [adminEmails, setAdminEmails] = useState<string[]>([
     SUPER_ADMIN_EMAIL,
     'moderator@vkid.app',
@@ -59,6 +65,21 @@ export default function App() {
   const [isAiStoryOpen, setIsAiStoryOpen] = useState<boolean>(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+
+  // PWA Install & Invite State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
 
   const currentProfile = profiles.find((p) => p.id === currentProfileId) || profiles[0];
 
@@ -88,6 +109,14 @@ export default function App() {
 
     return () => clearInterval(interval);
   }, [screenTimeConfig.isTimerEnabled, isScreenLocked]);
+
+  // Sync Root Document RTL / Language attributes on language change
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.dir = isRtl(currentLanguage) ? 'rtl' : 'ltr';
+      document.documentElement.lang = currentLanguage;
+    }
+  }, [currentLanguage]);
 
   const handleToggleTts = () => {
     const next = !ttsActive;
@@ -220,10 +249,10 @@ export default function App() {
   };
 
   return (
-    <DeviceFrame isMobileFrame={isMobileFrame}>
+    <DeviceFrame isMobileFrame={isMobileFrame} onExitMobileFrame={() => setIsMobileFrame(false)}>
       <div
         dir={isRtl(currentLanguage) ? 'rtl' : 'ltr'}
-        className="min-h-screen bg-gradient-to-b from-amber-50/60 via-orange-50/30 to-purple-50/40 text-slate-900 pb-12 font-sans selection:bg-amber-200 transition-all duration-300"
+        className="min-h-screen min-h-[100dvh] w-full overflow-x-hidden bg-gradient-to-b from-amber-50/60 via-orange-50/30 to-purple-50/40 text-slate-900 pb-12 pt-safe pb-safe font-sans selection:bg-amber-200 transition-all duration-300"
       >
         {/* Top App Bar */}
         <Header
@@ -234,8 +263,6 @@ export default function App() {
           totalDailyMinutes={screenTimeConfig.sessionDurationMinutes}
           ttsActive={ttsActive}
           onToggleTts={handleToggleTts}
-          isMobileFrame={isMobileFrame}
-          onToggleMobileFrame={() => setIsMobileFrame(!isMobileFrame)}
           onOpenParentPin={() => setIsParentPinOpen(true)}
           onOpenCodeExport={() => setIsCodeExportOpen(true)}
           onOpenAiStory={() => setIsAiStoryOpen(true)}
@@ -246,6 +273,8 @@ export default function App() {
           pendingCount={pendingVideosCount}
           onOpenUploadModal={() => setIsUploadModalOpen(true)}
           onOpenAdminModal={() => setIsAdminModalOpen(true)}
+          onOpenInstallPwa={() => setIsInstallModalOpen(true)}
+          onOpenInviteModal={() => setIsInviteModalOpen(true)}
         />
 
         {/* Universal Search Bar (Dual Scope: Videos & Users) */}
@@ -272,6 +301,7 @@ export default function App() {
             onAddScorePoints={handleAddScorePoints}
             onToggleFavorite={handleToggleFavorite}
             onRecordMediaWatch={handleRecordMediaWatch}
+            currentLanguage={currentLanguage}
           />
         </main>
 
@@ -340,7 +370,41 @@ export default function App() {
             onClose={() => setIsAdminModalOpen(false)}
           />
         )}
+
+        {/* 8. Supabase Auth Modal (Login & Register) */}
+        <AuthModal currentLanguage={currentLanguage} />
+
+        {/* 9. PWA Mobile Installation Modal */}
+        <InstallPwaModal
+          isOpen={isInstallModalOpen}
+          onClose={() => setIsInstallModalOpen(false)}
+          canInstallDirect={!!deferredPrompt}
+          currentLanguage={currentLanguage}
+          onInstallDirect={() => {
+            if (deferredPrompt) {
+              deferredPrompt.prompt();
+              deferredPrompt.userChoice.then(() => {
+                setDeferredPrompt(null);
+              });
+            }
+          }}
+        />
+
+        {/* 10. Invite Friends & Parents Modal */}
+        <InviteFriendsModal
+          isOpen={isInviteModalOpen}
+          onClose={() => setIsInviteModalOpen(false)}
+          currentLanguage={currentLanguage}
+        />
       </div>
     </DeviceFrame>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
   );
 }

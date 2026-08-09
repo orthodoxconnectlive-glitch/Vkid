@@ -76,7 +76,7 @@ export const UniversalSearchBar: React.FC<UniversalSearchBarProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-xl mx-auto z-40">
+    <div ref={containerRef} className="relative w-full max-w-xl mx-auto z-10">
       {/* Search Input Box */}
       <div className="relative flex items-center">
         <Search className="w-4 h-4 absolute left-3.5 text-amber-500 pointer-events-none" />
@@ -89,7 +89,7 @@ export const UniversalSearchBar: React.FC<UniversalSearchBarProps> = ({
           }}
           onFocus={() => setIsOpen(true)}
           placeholder={t('search_placeholder', 'Universal Search: Find videos, stories, creators & parents...')}
-          className="w-full bg-white/90 border-2 border-amber-300 hover:border-amber-400 focus:border-amber-500 rounded-full pl-10 pr-9 py-2 text-xs sm:text-sm font-bold text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-200 transition-all"
+          className="w-full h-11 bg-white/95 border-2 border-amber-300 hover:border-amber-400 focus:border-amber-500 rounded-full pl-10 pr-9 text-xs sm:text-sm font-bold text-slate-800 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-200 transition-all"
         />
         {query && (
           <button
