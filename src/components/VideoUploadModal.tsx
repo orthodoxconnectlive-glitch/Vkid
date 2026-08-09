@@ -19,6 +19,7 @@ import {
 import { soundFx } from '../utils/soundAndTTS';
 import { uploadFileToSupabase } from '../lib/supabase';
 import { uploadVideoToBunny } from '../lib/bunny';
+import { saveMediaItemToStorage } from '../lib/mediaService';
 
 import { SUPER_ADMIN_EMAIL } from './AdminModerationModal';
 
@@ -158,7 +159,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
           const bunnyResult = await uploadVideoToBunny(selectedMediaFile, title.trim());
           finalMediaUrl = bunnyResult.videoUrl;
           bunnyVideoId = bunnyResult.videoId;
-          setUploadProgress(70);
+          setUploadProgress(60);
         } else {
           // Audiobooks upload to Supabase Storage
           setUploadStatusText(`Uploading audio file (${formatFileSize(selectedMediaFile.size)})...`);
@@ -166,7 +167,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             selectedMediaFile,
             'vkid-media',
             'audio',
-            (pct) => setUploadProgress(Math.floor(pct * 0.7))
+            (pct) => setUploadProgress(Math.floor(pct * 0.6))
           );
         }
       } else {
@@ -187,7 +188,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
           selectedThumbnailFile,
           'vkid-media',
           'thumbnails',
-          (pct) => setUploadProgress(70 + Math.floor(pct * 0.3))
+          (pct) => setUploadProgress(60 + Math.floor(pct * 0.2))
         );
       } else if (thumbnailUrlInput.trim()) {
         finalThumbnailUrl = thumbnailUrlInput.trim();
@@ -200,8 +201,8 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         finalThumbnailUrl = defaultThumbs[mediaType];
       }
 
-      setUploadProgress(100);
-      setUploadStatusText('Finalizing submission...');
+      setUploadProgress(85);
+      setUploadStatusText('Saving record to Supabase database...');
 
       const isUserAdmin = currentUserEmail && (
         currentUserEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
@@ -224,6 +225,12 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         uploadedBy: currentUserEmail || 'parent@vkid.app',
         createdAt: new Date().toISOString(),
       };
+
+      // 3. PERSIST DIRECTLY TO SUPABASE DATABASE
+      await saveMediaItemToStorage(newMedia);
+
+      setUploadProgress(100);
+      setUploadStatusText('Finalizing submission...');
 
       setTimeout(() => {
         setIsUploading(false);
