@@ -18,7 +18,10 @@ import {
   PinOff,
   User,
   Sliders,
-  Sparkles as SparklesIcon
+  GraduationCap,
+  Building2,
+  Monitor,
+  Users,
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
 import { AppUser } from '../context/AuthContext';
@@ -33,7 +36,7 @@ interface SidebarNavigationProps {
   // Auth state
   user: AppUser | null;
   isAuthenticated: boolean;
-  openAuthModal: (mode: 'login' | 'register') => void;
+  openAuthModal: (mode: 'login' | 'register', accountType?: 'parent' | 'educator') => void;
   logout: () => void;
   currentUserEmail: string;
   adminEmails: string[];
@@ -43,9 +46,12 @@ interface SidebarNavigationProps {
   onOpenUploadModal: () => void;
   onOpenParentPin: () => void;
   onOpenAdminModal: () => void;
+  onOpenEducatorModal?: () => void;
   onOpenAiStory: () => void;
   onOpenInviteModal?: () => void;
   onOpenInstallPwa?: () => void;
+  isPresentationMode?: boolean;
+  onTogglePresentationMode?: () => void;
   // Preferences & Audio
   currentLanguage: SupportedLanguage;
   onSelectLanguage: (lang: SupportedLanguage) => void;
@@ -69,9 +75,12 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
   onOpenUploadModal,
   onOpenParentPin,
   onOpenAdminModal,
+  onOpenEducatorModal,
   onOpenAiStory,
   onOpenInviteModal,
   onOpenInstallPwa,
+  isPresentationMode = false,
+  onTogglePresentationMode,
   currentLanguage,
   onSelectLanguage,
   ttsActive,
@@ -89,6 +98,8 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
     effectiveAppMetaRole,
     adminEmails
   );
+
+  const isEducator = user?.role === 'educator';
 
   // Close sidebar drawer on Smart TV remote Back key
   useTvNavigation({
@@ -170,23 +181,69 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
           </div>
 
           {/* User Account Section Header */}
-          <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-amber-50 border-2 border-indigo-100 rounded-2xl p-3 shadow-xs">
+          <div className="bg-gradient-to-br from-indigo-50 via-purple-50 to-amber-50 border-2 border-indigo-100 rounded-2xl p-3 shadow-xs space-y-2.5">
             {isAuthenticated && user ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-black text-sm flex items-center justify-center shadow">
+                  <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-black text-sm flex items-center justify-center shadow shrink-0">
                     {user.fullName ? user.fullName.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
                   </div>
-                  <div className="overflow-hidden">
+                  <div className="overflow-hidden flex-1">
                     <p className="font-extrabold text-xs text-slate-900 truncate">
-                      {user.fullName || 'Parent Account'}
+                      {user.fullName || (isEducator ? 'Educator Account' : 'Parent Account')}
                     </p>
                     <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
-                    <span className="inline-block mt-0.5 bg-indigo-200 text-indigo-800 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase">
+                    {user.schoolName && (
+                      <p className="text-[10px] text-indigo-700 font-bold truncate flex items-center gap-1 mt-0.5">
+                        <Building2 className="w-3 h-3 shrink-0" />
+                        <span>{user.schoolName}</span>
+                      </p>
+                    )}
+                    <span className={`inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                      isEducator ? 'bg-indigo-200 text-indigo-900' : 'bg-amber-200 text-amber-900'
+                    }`}>
                       {user.role} account
                     </span>
                   </div>
                 </div>
+
+                {/* Quick Educator Actions if logged in as educator */}
+                {isEducator && (
+                  <div className="space-y-1.5 pt-1">
+                    <button
+                      onClick={() => {
+                        soundFx.playPop();
+                        onOpenEducatorModal?.();
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-xs transition-all active:scale-95"
+                    >
+                      <GraduationCap className="w-4 h-4" />
+                      <span>Educator Control Panel</span>
+                    </button>
+
+                    {onTogglePresentationMode && (
+                      <button
+                        onClick={() => {
+                          soundFx.playPop();
+                          onTogglePresentationMode();
+                        }}
+                        className={`w-full flex items-center justify-between py-1.5 px-2.5 rounded-xl text-xs font-bold border transition-all ${
+                          isPresentationMode
+                            ? 'bg-emerald-600 text-white border-emerald-500 shadow'
+                            : 'bg-white text-slate-800 border-indigo-200 hover:bg-indigo-50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Monitor className="w-3.5 h-3.5" />
+                          <span>Presentation Mode</span>
+                        </span>
+                        <span className="text-[10px] uppercase font-black">
+                          {isPresentationMode ? 'ON' : 'OFF'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 <button
                   onClick={() => {
@@ -201,25 +258,42 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               </div>
             ) : (
               <div className="text-center space-y-2 py-1">
-                <div className="flex justify-center">
-                  <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
-                    <User className="w-5 h-5" />
+                <div className="flex justify-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                    <GraduationCap className="w-4 h-4" />
                   </div>
                 </div>
                 <div>
-                  <p className="font-extrabold text-xs text-slate-800">Parent Account</p>
-                  <p className="text-[10px] text-slate-500">Sign in for video uploads & parental tools</p>
+                  <p className="font-extrabold text-xs text-slate-800">Account Access</p>
+                  <p className="text-[10px] text-slate-500">Sign in for parents or classroom educators</p>
                 </div>
-                <button
-                  onClick={() => {
-                    soundFx.playPop();
-                    openAuthModal('login');
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow transition-all active:scale-95"
-                >
-                  <LogIn className="w-4 h-4" />
-                  <span>Parent Log In / Sign Up</span>
-                </button>
+
+                <div className="grid grid-cols-1 gap-1.5 pt-1">
+                  <button
+                    onClick={() => {
+                      soundFx.playPop();
+                      openAuthModal('login', 'parent');
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs shadow transition-all active:scale-95"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Parent Login / Sign Up</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      soundFx.playPop();
+                      openAuthModal('login', 'educator');
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow transition-all active:scale-95"
+                  >
+                    <GraduationCap className="w-4 h-4" />
+                    <span>School / Educator Login</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -230,6 +304,27 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
               <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
               <span>Account & Controls</span>
             </div>
+
+            {/* School Educator Control Panel Button (if Educator or quick access) */}
+            {onOpenEducatorModal && (
+              <button
+                onClick={() => {
+                  soundFx.playPop();
+                  onOpenEducatorModal();
+                }}
+                className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-indigo-50 hover:bg-indigo-100 border-2 border-indigo-200 text-slate-800 font-bold text-xs transition-all text-left shadow-xs group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+                    <GraduationCap className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-900 leading-tight">School & Educator Portal</p>
+                    <p className="text-[10px] text-indigo-700 font-medium">Classes, Playlists & Presentation</p>
+                  </div>
+                </div>
+              </button>
+            )}
 
             {/* Upload Video Button */}
             <button
@@ -299,7 +394,7 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
           {/* Section 2: App Tools & Features */}
           <div className="space-y-2 pt-2 border-t border-slate-100">
             <div className="flex items-center gap-1.5 text-xs font-black text-slate-400 uppercase tracking-wider px-1">
-              <SparklesIcon className="w-3.5 h-3.5 text-indigo-500" />
+              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
               <span>App Tools & Features</span>
             </div>
 

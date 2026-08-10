@@ -437,14 +437,14 @@ export const AdminModerationModal: React.FC<AdminModerationModalProps> = ({
                         <button
                           onClick={() => {
                             soundFx.playPop();
-                            if (confirm('Are you sure you want to reject and remove this submission?')) {
+                            if (confirm('Are you sure you want to permanently delete this video from VKid?')) {
                               onRejectVideo(item.id);
                             }
                           }}
-                          className="bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1 transition-all"
+                          className="bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1 transition-all cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4" />
-                          <span>Reject</span>
+                          <span>Delete</span>
                         </button>
                       </div>
                     </div>

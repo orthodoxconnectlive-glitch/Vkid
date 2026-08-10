@@ -1,8 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChildProfile, ScreenTimeConfig, UsageReportData } from '../../types';
-import { Clock, ShieldCheck, BarChart3, Users, Sparkles, X, Plus, Save, CheckCircle2, Moon, SlidersHorizontal } from 'lucide-react';
+import { Clock, ShieldCheck, BarChart3, Users, Sparkles, X, Plus, Save, CheckCircle2, Moon, SlidersHorizontal, History, Film, ExternalLink, Trash2 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
 import { soundFx } from '../../utils/soundAndTTS';
+
+interface WatchHistoryItem {
+  id: string;
+  mediaId: string;
+  title: string;
+  category: string;
+  type: string;
+  watchedAt: string;
+  duration: string;
+  thumbnailUrl: string;
+  mediaUrl: string;
+}
 
 interface ParentDashboardProps {
   screenTimeConfig: ScreenTimeConfig;
@@ -21,10 +33,29 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
   usageData,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState<'screentime' | 'filters' | 'reports' | 'profiles' | 'ai'>('screentime');
+  const [activeTab, setActiveTab] = useState<'screentime' | 'filters' | 'reports' | 'history' | 'profiles' | 'ai'>('screentime');
   const [config, setConfig] = useState<ScreenTimeConfig>({ ...screenTimeConfig });
   const [childProfiles, setChildProfiles] = useState<ChildProfile[]>([...profiles]);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>([]);
+
+  // Load Watch History from LocalStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('vkid_watch_history');
+      if (raw) {
+        setWatchHistory(JSON.parse(raw));
+      }
+    } catch (e) {
+      console.warn('Could not parse watch history:', e);
+    }
+  }, []);
+
+  const handleClearHistory = () => {
+    soundFx.playPop();
+    localStorage.removeItem('vkid_watch_history');
+    setWatchHistory([]);
+  };
 
   // AI Parent Insights state
   const [aiInsight, setAiInsight] = useState<string | null>(null);
@@ -164,6 +195,19 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
           >
             <BarChart3 className="w-4 h-4" />
             <span>Usage Reports</span>
+          </button>
+
+          <button
+            onClick={() => {
+              soundFx.playPop();
+              setActiveTab('history');
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              activeTab === 'history' ? 'bg-white text-rose-600 shadow' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            <span>Watch History ({watchHistory.length})</span>
           </button>
 
           <button
@@ -372,6 +416,82 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'history' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between bg-rose-50 p-4 rounded-2xl border border-rose-200">
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-sm">Recently Watched Videos & Media</h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Monitor what educational videos your children have watched on VKid
+                  </p>
+                </div>
+                {watchHistory.length > 0 && (
+                  <button
+                    onClick={handleClearHistory}
+                    className="flex items-center gap-1 bg-white hover:bg-rose-100 text-rose-700 font-bold text-xs px-3 py-1.5 rounded-xl border border-rose-300 transition-all cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Clear History</span>
+                  </button>
+                )}
+              </div>
+
+              {watchHistory.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                  <Film className="w-10 h-10 text-slate-400 mx-auto animate-pulse" />
+                  <p className="text-xs font-bold text-slate-700">No watch history recorded yet</p>
+                  <p className="text-[11px] text-slate-400">
+                    When kids watch educational videos or listen to stories, they will automatically appear here!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                  {watchHistory.map((item) => (
+                    <div
+                      key={item.id}
+                      className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between gap-3 hover:border-amber-300 transition-all"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {item.thumbnailUrl ? (
+                          <img
+                            src={item.thumbnailUrl}
+                            alt={item.title}
+                            className="w-16 h-10 object-cover rounded-xl shrink-0 bg-slate-900"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-16 h-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center shrink-0">
+                            <Film className="w-5 h-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <h4 className="font-extrabold text-xs text-slate-900 truncate">{item.title}</h4>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-500 font-medium mt-0.5">
+                            <span className="bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded font-bold">{item.category}</span>
+                            <span>•</span>
+                            <span>{item.duration}</span>
+                            <span>•</span>
+                            <span>{new Date(item.watchedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <a
+                        href={item.mediaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 bg-slate-100 hover:bg-amber-100 text-slate-700 hover:text-amber-900 rounded-xl transition-all shrink-0"
+                        title="Open Direct Link"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

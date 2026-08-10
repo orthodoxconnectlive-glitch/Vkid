@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { AlertTriangle, RefreshCw, Film } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Film, ExternalLink } from 'lucide-react';
+import { parseExternalVideoUrl } from '../utils/mediaUtils';
 
 interface TvVideoPlayerProps {
   mediaUrl: string;
   title: string;
   posterUrl?: string;
   className?: string;
+  onOpenExternal?: () => void;
 }
 
 export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
@@ -13,6 +15,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   title,
   posterUrl,
   className = 'w-full h-full',
+  onOpenExternal,
 }) => {
   const [hasError, setHasError] = useState(false);
   const [key, setKey] = useState(0);
@@ -26,65 +29,52 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     );
   }
 
-  // Convert raw Bunny Stream URLs or Video GUIDs to official iframe embed format
-  const getNormalizedUrl = (url: string): { isEmbed: boolean; formattedUrl: string } => {
-    if (!url) return { isEmbed: false, formattedUrl: '' };
+  const parsed = parseExternalVideoUrl(mediaUrl);
 
-    // 1. YouTube & Vimeo
-    if (url.includes('youtube.com') || url.includes('youtu.be')) {
-      let finalUrl = url;
-      if (url.includes('watch?v=')) {
-        const videoId = url.split('v=')[1]?.split('&')[0];
-        finalUrl = `https://www.youtube.com/embed/${videoId}`;
-      } else if (url.includes('youtu.be/')) {
-        const videoId = url.split('youtu.be/')[1]?.split('?')[0];
-        finalUrl = `https://www.youtube.com/embed/${videoId}`;
-      }
-      if (!finalUrl.includes('playsinline=')) {
-        finalUrl += finalUrl.includes('?') ? '&playsinline=1' : '?playsinline=1';
-      }
-      return { isEmbed: true, formattedUrl: finalUrl };
-    }
+  // Check if mediaUrl is an embed iframe link or YouTube/Vimeo external link
+  const isEmbed =
+    parsed.provider === 'youtube' ||
+    parsed.provider === 'vimeo' ||
+    mediaUrl.includes('youtube.com/embed/') ||
+    mediaUrl.includes('youtube-nocookie.com/embed/') ||
+    mediaUrl.includes('vimeo.com/video/') ||
+    mediaUrl.includes('mediadelivery.net/embed/') ||
+    mediaUrl.includes('player.vimeo.com');
 
-    if (url.includes('vimeo.com')) {
-      return { isEmbed: true, formattedUrl: url };
-    }
-
-    // 2. Bunny Stream (iframe embed, mediadelivery.net, or bunnycdn.com)
-    if (
-      url.includes('mediadelivery.net') ||
-      url.includes('bunnycdn.com') ||
-      url.includes('bunny.net') ||
-      url.includes('/embed/')
-    ) {
-      // If it's already an embed iframe URL, append autoplay/preload
-      if (url.includes('/embed/')) {
-        return { isEmbed: true, formattedUrl: url };
-      }
-
-      // Extract Bunny Video GUID (e.g. c3483883-78dc-48e8-b2af-5848ced3d5ea)
-      const libraryId = import.meta.env.VITE_BUNNY_LIBRARY_ID || '723727';
-      const guidMatch = url.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
-
-      if (guidMatch && guidMatch[0]) {
-        const embedUrl = `https://iframe.mediadelivery.net/embed/${libraryId}/${guidMatch[0]}?autoplay=true&loop=false&muted=false&preload=true`;
-        return { isEmbed: true, formattedUrl: embedUrl };
-      }
-    }
-
-    // 3. Fallback for direct MP4 / WebM files
-    return { isEmbed: false, formattedUrl: url };
-  };
-
-  const { isEmbed, formattedUrl } = getNormalizedUrl(mediaUrl);
-
-  // Render iFrame Player for Bunny Stream, YouTube, Vimeo
   if (isEmbed) {
+    let finalEmbedUrl = parsed.embedUrl || mediaUrl;
+
+    // Convert standard youtube.com/embed to youtube-nocookie.com/embed
+    if (finalEmbedUrl.includes('youtube.com/embed/')) {
+      finalEmbedUrl = finalEmbedUrl.replace('youtube.com/embed/', 'youtube-nocookie.com/embed/');
+    }
+
+    // Enforce YouTube safety query parameters
+    if (finalEmbedUrl.includes('youtube-nocookie.com') || finalEmbedUrl.includes('youtube.com')) {
+      if (!finalEmbedUrl.includes('rel=')) {
+        finalEmbedUrl += finalEmbedUrl.includes('?') ? '&rel=0' : '?rel=0';
+      }
+      if (!finalEmbedUrl.includes('modestbranding=')) {
+        finalEmbedUrl += '&modestbranding=1';
+      }
+      if (!finalEmbedUrl.includes('disablekb=')) {
+        finalEmbedUrl += '&disablekb=1';
+      }
+      if (!finalEmbedUrl.includes('autoplay=')) {
+        finalEmbedUrl += '&autoplay=1';
+      }
+      if (!finalEmbedUrl.includes('playsinline=')) {
+        finalEmbedUrl += '&playsinline=1';
+      }
+    }
+
+    const watchLink = parsed.externalWatchUrl || (parsed.videoId ? `https://www.youtube.com/watch?v=${parsed.videoId}` : mediaUrl);
+
     return (
-      <div className={`relative bg-black rounded-2xl overflow-hidden ${className}`}>
+      <div className={`relative bg-black rounded-2xl overflow-hidden group ${className}`}>
         <iframe
           key={key}
-          src={formattedUrl}
+          src={finalEmbedUrl}
           title={title}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
@@ -93,11 +83,30 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           mozallowfullscreen="true"
           className="w-full h-full border-0 rounded-2xl"
         />
+
+        {/* Quick External Fallback Overlay Bar */}
+        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 flex items-center gap-2 z-10 shadow-lg">
+          <span className="text-[10px] font-extrabold text-slate-300">Having playback issues?</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (onOpenExternal) {
+                onOpenExternal();
+              } else {
+                window.open(watchLink, '_blank', 'noopener,noreferrer');
+              }
+            }}
+            className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-extrabold px-2.5 py-1 rounded-lg transition-all cursor-pointer shadow"
+          >
+            <ExternalLink className="w-3 h-3" />
+            <span>Open in YouTube</span>
+          </button>
+        </div>
       </div>
     );
   }
 
-  // Native HTML5 <video> player fallback for direct MP4 file streams
+  // Native HTML5 <video> player with full custom controls for direct video streams/uploads (MP4, WebM, Supabase)
   return (
     <div className={`relative bg-black rounded-2xl overflow-hidden flex items-center justify-center ${className}`}>
       {hasError ? (
@@ -105,18 +114,33 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
           <h4 className="font-extrabold text-sm sm:text-base">Video Playback Notice</h4>
           <p className="text-xs text-slate-300 max-w-md font-medium leading-relaxed">
-            Unable to stream this video file directly.
+            Your Smart TV or web browser experienced a loading delay with this video stream.
           </p>
-          <button
-            onClick={() => {
-              setHasError(false);
-              setKey((prev) => prev + 1);
-            }}
-            className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs rounded-xl shadow transition-all flex items-center gap-2 cursor-pointer focus:ring-4 focus:ring-white"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>Retry Video Stream</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            <button
+              onClick={() => {
+                setHasError(false);
+                setKey((prev) => prev + 1);
+              }}
+              className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs rounded-xl shadow transition-all flex items-center gap-2 cursor-pointer focus:ring-4 focus:ring-white"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Retry Stream</span>
+            </button>
+            <button
+              onClick={() => {
+                if (onOpenExternal) {
+                  onOpenExternal();
+                } else {
+                  window.open(mediaUrl, '_blank', 'noopener,noreferrer');
+                }
+              }}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl border border-slate-600 shadow transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Open Direct Link</span>
+            </button>
+          </div>
         </div>
       ) : (
         <video
@@ -131,11 +155,13 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           onError={() => setHasError(true)}
           className="w-full h-full object-contain rounded-2xl focus:outline-none focus:ring-4 focus:ring-amber-400"
         >
-          <source src={formattedUrl} type="video/mp4" />
-          <source src={formattedUrl} type="video/webm" />
-          <source src={formattedUrl} />
+          {/* Specific MIME types for Smart TV H.264/AAC compatibility */}
+          <source src={mediaUrl} type="video/mp4; codecs='avc1.42E01E, mp4a.40.2'" />
+          <source src={mediaUrl} type="video/mp4" />
+          <source src={mediaUrl} type="video/webm" />
+          <source src={mediaUrl} />
           <div className="p-6 text-center text-white">
-            <p className="text-xs font-bold">Your browser does not support HTML5 video playback.</p>
+            <p className="text-xs font-bold">Your browser does not support HTML5 video tag.</p>
           </div>
         </video>
       )}

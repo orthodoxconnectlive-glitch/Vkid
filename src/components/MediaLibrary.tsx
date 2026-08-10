@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { MediaItem, MediaType, AgeGroup, SupportedLanguage } from '../types';
-import { Play, Headphones, Music, Star, Search, X, Volume2, Sparkles, Heart } from 'lucide-react';
+import { Play, Headphones, Music, Star, Search, X, Volume2, Sparkles, Heart, Trash2, ShieldCheck, ExternalLink, ChevronRight, PlayCircle } from 'lucide-react';
 import { soundFx, speakText } from '../utils/soundAndTTS';
 import { getTranslation } from '../data/translations';
 import { TvVideoPlayer } from './TvVideoPlayer';
 import { useTvNavigation } from '../hooks/useTvNavigation';
+import { parseExternalVideoUrl } from '../utils/mediaUtils';
 
 interface MediaLibraryProps {
   mediaList: MediaItem[];
@@ -13,6 +14,10 @@ interface MediaLibraryProps {
   onToggleFavorite: (mediaId: string) => void;
   onRecordMediaWatch: (durationMinutes: number) => void;
   currentLanguage?: SupportedLanguage;
+  isAdmin?: boolean;
+  currentUserEmail?: string;
+  onDeleteVideo?: (id: string) => Promise<void> | void;
+  onApproveVideo?: (id: string) => Promise<void> | void;
 }
 
 export const MediaLibrary: React.FC<MediaLibraryProps> = ({
@@ -22,22 +27,53 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   onToggleFavorite,
   onRecordMediaWatch,
   currentLanguage = 'en',
+  isAdmin = false,
+  currentUserEmail,
+  onDeleteVideo,
+  onApproveVideo,
 }) => {
   const t = (key: string, fallback: string) => getTranslation(currentLanguage, key, fallback);
   const [selectedType, setSelectedType] = useState<MediaType | 'all'>('all');
   const [selectedAge, setSelectedAge] = useState<AgeGroup | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMedia, setActiveMedia] = useState<MediaItem | null>(null);
+  const [deletingItem, setDeletingItem] = useState<MediaItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Helper to record watch history into localStorage
+  const recordWatchHistory = (item: MediaItem) => {
+    try {
+      const raw = localStorage.getItem('vkid_watch_history');
+      let list = raw ? JSON.parse(raw) : [];
+      const newEntry = {
+        id: `wh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        mediaId: item.id,
+        title: item.title,
+        category: item.category,
+        type: item.type,
+        watchedAt: new Date().toISOString(),
+        duration: item.duration || '5:00',
+        thumbnailUrl: item.thumbnailUrl,
+        mediaUrl: item.mediaUrl,
+      };
+      list = [newEntry, ...list.filter((x: any) => x.mediaId !== item.id)].slice(0, 50);
+      localStorage.setItem('vkid_watch_history', JSON.stringify(list));
+    } catch (e) {
+      console.warn('Watch history error:', e);
+    }
+  };
 
   // Smart TV Remote D-Pad Navigation Back Key Listener
   useTvNavigation({
     onBack: () => {
-      if (activeMedia) {
+      if (deletingItem) {
+        setDeletingItem(null);
+      } else if (activeMedia) {
         soundFx.playPop();
         setActiveMedia(null);
       }
     },
-    enabled: !!activeMedia,
+    enabled: !!activeMedia || !!deletingItem,
   });
 
   const filteredList = mediaList.filter((item) => {
@@ -46,14 +82,30 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
     const matchesSearch =
       item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.category.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesType && matchesAge && matchesSearch;
+
+    const isPending = item.status === 'pending_approval' || item.status === 'pending' || item.status === 'pending_moderation';
+    const isUploader = currentUserEmail && item.uploadedBy?.toLowerCase() === currentUserEmail.toLowerCase();
+    const isVisibleStatus = !isPending || isAdmin || isUploader;
+
+    return matchesType && matchesAge && matchesSearch && isVisibleStatus;
   });
 
   const handleMediaClick = (item: MediaItem) => {
     soundFx.playPop();
     speakText(`Opening ${item.title}`);
     setActiveMedia(item);
+    recordWatchHistory(item);
     onRecordMediaWatch(5); // Record 5 minutes media watch engagement
+  };
+
+  const handlePlayNext = () => {
+    if (!activeMedia) return;
+    const currentIndex = filteredList.findIndex((x) => x.id === activeMedia.id);
+    const nextIndex = (currentIndex + 1) % filteredList.length;
+    const nextItem = filteredList[nextIndex] || filteredList[0];
+    if (nextItem) {
+      handleMediaClick(nextItem);
+    }
   };
 
   return (
@@ -207,18 +259,66 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   {item.duration}
                 </span>
 
-                {/* Favorite Button */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    soundFx.playPop();
-                    onToggleFavorite(item.id);
-                  }}
-                  className="absolute top-3 right-3 p-2 rounded-full bg-white/80 hover:bg-white text-rose-500 shadow-md transition-transform active:scale-90"
-                  title={isFav ? 'Remove from favorites' : 'Add to favorites'}
-                >
-                  <Heart className={`w-4 h-4 ${isFav ? 'fill-rose-500 text-rose-500' : 'text-slate-400'}`} />
-                </button>
+                {/* Favorite & Admin Action Buttons */}
+                <div className="absolute top-3 right-3 flex items-center gap-1.5 z-20">
+                  {/* Admin-Only Trash Delete Button */}
+                  {isAdmin && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        soundFx.playPop();
+                        setDeletingItem(item);
+                      }}
+                      className="p-2 rounded-full bg-rose-600 hover:bg-rose-700 text-white shadow-md transition-transform active:scale-90 cursor-pointer"
+                      title="Delete Video permanently (Admin Only)"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  {/* Favorite Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      soundFx.playPop();
+                      onToggleFavorite(item.id);
+                    }}
+                    className="p-2 rounded-full bg-white/80 hover:bg-white text-rose-500 shadow-md transition-transform active:scale-90"
+                    title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    <Heart className={`w-4 h-4 ${isFav ? 'fill-rose-500 text-rose-500' : 'text-slate-400'}`} />
+                  </button>
+                </div>
+
+                {/* Pending Approval / Review Badges */}
+                {(item.status === 'pending_approval' || item.status === 'pending' || item.status === 'pending_moderation') && (
+                  <div className="absolute bottom-3 left-3 flex items-center gap-1.5 z-10">
+                    <div className="bg-amber-500/90 backdrop-blur-md text-white px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center gap-1 shadow border border-amber-300">
+                      <span>⏳ Pending Review</span>
+                    </div>
+
+                    {/* Quick Admin Approve Button */}
+                    {isAdmin && onApproveVideo && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          soundFx.playSuccess();
+                          onApproveVideo(item.id);
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded-lg text-[10px] font-black flex items-center gap-1 shadow border border-emerald-400 cursor-pointer"
+                        title="Approve video for public feed"
+                      >
+                        <ShieldCheck className="w-3 h-3" />
+                        <span>Approve</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Duration Badge */}
+                <span className="absolute bottom-3 right-3 bg-black/70 text-white px-2 py-0.5 rounded-md text-[10px] font-bold">
+                  {item.duration}
+                </span>
 
                 {/* Play Overlay Button */}
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
@@ -262,33 +362,55 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
 
       {/* Media Player Modal Overlay */}
       {activeMedia && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl overflow-hidden max-w-3xl w-full border-4 border-amber-300 shadow-2xl relative">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200 overflow-y-auto">
+          <div className="bg-white rounded-3xl overflow-hidden max-w-3xl w-full border-4 border-amber-300 shadow-2xl relative my-auto max-h-[92vh] flex flex-col">
             {/* Modal Top Bar */}
-            <div className="p-4 bg-gradient-to-r from-amber-400 to-orange-400 text-slate-900 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-900" />
-                <h3 className="font-black text-base truncate max-w-md">{activeMedia.title}</h3>
+            <div className="p-3.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 text-slate-900 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 min-w-0 pr-2">
+                <Sparkles className="w-5 h-5 text-amber-950 shrink-0" />
+                <h3 className="font-black text-sm sm:text-base truncate">{activeMedia.title}</h3>
               </div>
-              <button
-                onClick={() => {
-                  soundFx.playPop();
-                  setActiveMedia(null);
-                }}
-                className="p-1.5 rounded-full bg-white/20 hover:bg-white/40 text-slate-900 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {/* External Watch Link Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const parsed = parseExternalVideoUrl(activeMedia.mediaUrl);
+                    const targetUrl = parsed.externalWatchUrl || activeMedia.mediaUrl;
+                    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="hidden sm:flex items-center gap-1.5 bg-white/30 hover:bg-white/50 text-slate-900 font-extrabold text-xs px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm border border-black/10"
+                  title="Open video directly in new tab if embed is blocked"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Watch on External Link</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    soundFx.playPop();
+                    setActiveMedia(null);
+                  }}
+                  className="p-1.5 rounded-full bg-white/20 hover:bg-white/40 text-slate-900 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Media Player Body */}
-            <div className="p-4 sm:p-6 bg-slate-900">
+            <div className="p-3 sm:p-5 bg-slate-950 overflow-y-auto flex-1 space-y-4">
               {activeMedia.type === 'video' || activeMedia.type === 'rhyme' ? (
-                <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-inner">
+                <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-2xl">
                   <TvVideoPlayer
                     mediaUrl={activeMedia.mediaUrl}
                     title={activeMedia.title}
                     posterUrl={activeMedia.thumbnailUrl}
+                    onOpenExternal={() => {
+                      const parsed = parseExternalVideoUrl(activeMedia.mediaUrl);
+                      window.open(parsed.externalWatchUrl || activeMedia.mediaUrl, '_blank');
+                    }}
                   />
                 </div>
               ) : (
@@ -308,21 +430,147 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   </div>
                 </div>
               )}
+
+              {/* Related Educational Videos List */}
+              <div className="pt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                    <PlayCircle className="w-4 h-4 text-amber-400" />
+                    <span>Next Safe Videos for Kids</span>
+                  </h4>
+                  <span className="text-[10px] text-slate-400 font-bold">Tap to play next</span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {mediaList
+                    .filter((m) => m.id !== activeMedia.id)
+                    .slice(0, 4)
+                    .map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleMediaClick(item)}
+                        className="bg-slate-900 border border-slate-800 hover:border-amber-400 p-2 rounded-xl text-left transition-all group flex flex-col justify-between cursor-pointer"
+                      >
+                        <div className="relative aspect-video w-full rounded-lg overflow-hidden bg-slate-950 mb-1.5">
+                          <img
+                            src={item.thumbnailUrl}
+                            alt={item.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Play className="w-5 h-5 text-amber-400 fill-current" />
+                          </div>
+                          <span className="absolute bottom-1 right-1 bg-black/80 text-[9px] text-white px-1 rounded font-bold">
+                            {item.duration}
+                          </span>
+                        </div>
+                        <h5 className="text-[11px] font-bold text-white leading-tight line-clamp-1 group-hover:text-amber-300">
+                          {item.title}
+                        </h5>
+                        <p className="text-[9px] text-slate-400 font-medium truncate mt-0.5">{item.category}</p>
+                      </button>
+                    ))}
+                </div>
+              </div>
             </div>
 
             {/* Modal Bottom Footer */}
-            <div className="p-4 bg-amber-50 flex items-center justify-between">
-              <span className="text-xs font-bold text-amber-800">
-                Safe Kid Streaming • Age Group: {activeMedia.targetAgeGroup.join(', ')}
-              </span>
+            <div className="p-3.5 bg-amber-50 border-t border-amber-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-900">
+                  Safe Kid Streaming • Ages {activeMedia.targetAgeGroup.join(', ')}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* External Watch Fallback Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const parsed = parseExternalVideoUrl(activeMedia.mediaUrl);
+                    window.open(parsed.externalWatchUrl || activeMedia.mediaUrl, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="flex items-center gap-1 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-extrabold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Open in External Link</span>
+                </button>
+
+                {/* Next Video Button */}
+                <button
+                  type="button"
+                  onClick={handlePlayNext}
+                  className="flex items-center gap-1 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 text-slate-900 font-extrabold text-xs px-3.5 py-2 rounded-xl shadow transition-all cursor-pointer active:scale-95"
+                >
+                  <span>Next Video</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundFx.playPop();
+                    setActiveMedia(null);
+                  }}
+                  className="bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition-all cursor-pointer"
+                >
+                  Done Watching
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Admin Delete Video Confirmation Modal */}
+      {deletingItem && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 border-4 border-rose-300 shadow-2xl space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+              <Trash2 className="w-7 h-7" />
+            </div>
+            <div className="text-center space-y-2">
+              <h3 className="font-extrabold text-xl text-slate-900">Delete Video Confirmation</h3>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                Are you sure you want to permanently delete <strong className="text-slate-900 font-bold">"{deletingItem.title}"</strong> from VKid?
+              </p>
+              <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 p-2.5 rounded-2xl font-bold text-left">
+                ⚠️ This will permanently purge the video record from state/database and remove the underlying media file from Cloudflare / Supabase Storage.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
               <button
-                onClick={() => {
-                  soundFx.playPop();
-                  setActiveMedia(null);
-                }}
-                className="bg-slate-800 text-white font-extrabold text-xs px-4 py-2 rounded-xl"
+                onClick={() => setDeletingItem(null)}
+                disabled={isDeleting}
+                className="flex-1 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs transition-colors disabled:opacity-50"
               >
-                Done Watching
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  soundFx.playPop();
+                  setIsDeleting(true);
+                  try {
+                    if (onDeleteVideo) {
+                      await onDeleteVideo(deletingItem.id);
+                    }
+                  } finally {
+                    setIsDeleting(false);
+                    setDeletingItem(null);
+                  }
+                }}
+                disabled={isDeleting}
+                className="flex-1 py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-extrabold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <span>Deleting...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Video</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

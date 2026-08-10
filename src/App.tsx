@@ -23,6 +23,7 @@ import { VideoUploadModal } from './components/VideoUploadModal';
 import { AdminModerationModal, SUPER_ADMIN_EMAIL, SUPER_ADMIN_WHITELIST, checkIsAdmin } from './components/AdminModerationModal';
 import { UniversalSearchBar } from './components/UniversalSearchBar';
 import { AuthModal } from './components/AuthModal';
+import { EducatorControlPanel } from './components/EducatorControlPanel';
 import { InstallPwaModal } from './components/InstallPwaModal';
 import { InviteFriendsModal } from './components/InviteFriendsModal';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -42,7 +43,7 @@ function AppInner() {
   const [screenTimeConfig, setScreenTimeConfig] = useState<ScreenTimeConfig>(DEFAULT_SCREEN_TIME_CONFIG);
   const [parentPin, setParentPin] = useState<string>('1234');
 
-  const { user } = useAuth();
+  const { user, isPresentationMode, activeClass } = useAuth();
 
   // Video Media State & Admin Moderation Queue
   const [mediaItems, setMediaItems] = useState<MediaItem[]>(getInitialMediaItems);
@@ -69,6 +70,13 @@ function AppInner() {
     'moderator@vkid.app',
   ]);
 
+  const isAdmin = checkIsAdmin(
+    currentUserEmail,
+    user?.role,
+    user?.app_metadata?.role || user?.user_metadata?.role,
+    adminEmails
+  );
+
   // Screen Time Session Countdown
   const [remainingMinutes, setRemainingMinutes] = useState<number>(screenTimeConfig.sessionDurationMinutes);
   const [isScreenLocked, setIsScreenLocked] = useState<boolean>(false);
@@ -82,6 +90,7 @@ function AppInner() {
   const [isAiStoryOpen, setIsAiStoryOpen] = useState<boolean>(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+  const [isEducatorModalOpen, setIsEducatorModalOpen] = useState<boolean>(false);
 
   // PWA Install & Invite State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -105,7 +114,8 @@ function AppInner() {
   // Global Smart TV Remote Back Key modal dismiss handler
   useTvNavigation({
     onBack: () => {
-      if (isAdminModalOpen) setIsAdminModalOpen(false);
+      if (isEducatorModalOpen) setIsEducatorModalOpen(false);
+      else if (isAdminModalOpen) setIsAdminModalOpen(false);
       else if (isParentDashboardOpen) setIsParentDashboardOpen(false);
       else if (isParentPinOpen) setIsParentPinOpen(false);
       else if (isAiStoryOpen) setIsAiStoryOpen(false);
@@ -296,6 +306,24 @@ function AppInner() {
         dir={isRtl(currentLanguage) ? 'rtl' : 'ltr'}
         className="min-h-screen min-h-[100dvh] w-full overflow-x-hidden bg-gradient-to-b from-amber-50/60 via-orange-50/30 to-purple-50/40 text-slate-900 pb-12 pt-safe pb-safe font-sans selection:bg-amber-200 transition-all duration-300"
       >
+        {/* Presentation Mode Status Banner if Active */}
+        {isPresentationMode && (
+          <div className="bg-indigo-900 text-white px-4 py-2 text-xs font-bold flex items-center justify-between shadow-md border-b-2 border-indigo-700 animate-in slide-in-from-top">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span>
+                🏫 Classroom Presentation Mode — <strong>{user?.schoolName || 'St. Mark Orthodox Academy'}</strong> ({activeClass?.name || 'Class 1A'})
+              </span>
+            </div>
+            <button
+              onClick={() => setIsEducatorModalOpen(true)}
+              className="bg-indigo-700 hover:bg-indigo-600 px-2.5 py-1 rounded-lg text-[11px] font-black text-amber-300 transition-colors"
+            >
+              Control Panel
+            </button>
+          </div>
+        )}
+
         {/* Top App Bar with integrated Search Bar and Sidebar Navigation */}
         <Header
           currentProfile={currentProfile}
@@ -315,6 +343,7 @@ function AppInner() {
           pendingCount={pendingVideosCount}
           onOpenUploadModal={() => setIsUploadModalOpen(true)}
           onOpenAdminModal={() => setIsAdminModalOpen(true)}
+          onOpenEducatorModal={() => setIsEducatorModalOpen(true)}
           onOpenInstallPwa={() => setIsInstallModalOpen(true)}
           onOpenInviteModal={() => setIsInviteModalOpen(true)}
           mediaItems={mediaItems}
@@ -336,6 +365,10 @@ function AppInner() {
             onToggleFavorite={handleToggleFavorite}
             onRecordMediaWatch={handleRecordMediaWatch}
             currentLanguage={currentLanguage}
+            isAdmin={isAdmin}
+            currentUserEmail={currentUserEmail}
+            onDeleteVideo={handleRejectVideo}
+            onApproveVideo={handleApproveVideo}
           />
         </main>
 
@@ -404,6 +437,13 @@ function AppInner() {
             onClose={() => setIsAdminModalOpen(false)}
           />
         )}
+
+        {/* 7b. School & Educator Control Panel Modal */}
+        <EducatorControlPanel
+          isOpen={isEducatorModalOpen}
+          onClose={() => setIsEducatorModalOpen(false)}
+          currentLanguage={currentLanguage}
+        />
 
         {/* 8. Supabase Auth Modal (Login & Register) */}
         <AuthModal currentLanguage={currentLanguage} />

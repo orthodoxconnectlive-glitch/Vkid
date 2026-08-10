@@ -28,6 +28,7 @@ interface HeaderProps {
   pendingCount: number;
   onOpenUploadModal: () => void;
   onOpenAdminModal: () => void;
+  onOpenEducatorModal?: () => void;
   onOpenInstallPwa?: () => void;
   onOpenInviteModal?: () => void;
   // Search bar data
@@ -54,6 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
   pendingCount,
   onOpenUploadModal,
   onOpenAdminModal,
+  onOpenEducatorModal,
   onOpenInstallPwa,
   onOpenInviteModal,
   mediaItems = [],
@@ -64,7 +66,14 @@ export const Header: React.FC<HeaderProps> = ({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
 
-  const { user, isAuthenticated, openAuthModal, logout } = useAuth();
+  const {
+    user,
+    isAuthenticated,
+    openAuthModal,
+    logout,
+    isPresentationMode,
+    togglePresentationMode,
+  } = useAuth();
 
   const t = (key: string, fallback?: string) => getTranslation(currentLanguage, key, fallback);
 
@@ -259,6 +268,16 @@ export const Header: React.FC<HeaderProps> = ({
           setSidebarOpen(false);
           onOpenAdminModal();
         }}
+        onOpenEducatorModal={
+          onOpenEducatorModal
+            ? () => {
+                setSidebarOpen(false);
+                onOpenEducatorModal();
+              }
+            : undefined
+        }
+        isPresentationMode={isPresentationMode}
+        onTogglePresentationMode={togglePresentationMode}
         onOpenAiStory={() => {
           setSidebarOpen(false);
           speakText('Open AI Story Quest');

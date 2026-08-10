@@ -20,6 +20,10 @@ interface KidHomeFeedProps {
   onToggleFavorite: (mediaId: string) => void;
   onRecordMediaWatch: (durationMinutes: number) => void;
   currentLanguage?: SupportedLanguage;
+  isAdmin?: boolean;
+  currentUserEmail?: string;
+  onDeleteVideo?: (id: string) => Promise<void> | void;
+  onApproveVideo?: (id: string) => Promise<void> | void;
 }
 
 export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
@@ -32,6 +36,10 @@ export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
   onToggleFavorite,
   onRecordMediaWatch,
   currentLanguage = 'en',
+  isAdmin = false,
+  currentUserEmail,
+  onDeleteVideo,
+  onApproveVideo,
 }) => {
   const t = (key: string, fallback: string) => getTranslation(currentLanguage, key, fallback);
   const [activeTab, setActiveTab] = useState<'home' | 'media' | 'games' | 'rewards'>('home');
@@ -328,6 +336,10 @@ export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
                   onToggleFavorite={onToggleFavorite}
                   onRecordMediaWatch={onRecordMediaWatch}
                   currentLanguage={currentLanguage}
+                  isAdmin={isAdmin}
+                  currentUserEmail={currentUserEmail}
+                  onDeleteVideo={onDeleteVideo}
+                  onApproveVideo={onApproveVideo}
                 />
               </div>
             </div>
@@ -341,6 +353,10 @@ export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
               onToggleFavorite={onToggleFavorite}
               onRecordMediaWatch={onRecordMediaWatch}
               currentLanguage={currentLanguage}
+              isAdmin={isAdmin}
+              currentUserEmail={currentUserEmail}
+              onDeleteVideo={onDeleteVideo}
+              onApproveVideo={onApproveVideo}
             />
           )}
 

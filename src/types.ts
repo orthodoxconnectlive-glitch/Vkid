@@ -34,15 +34,33 @@ export interface MediaItem {
   status?: VideoApprovalStatus;
   uploadedBy?: string;
   createdAt?: string;
+  provider?: 'direct' | 'youtube' | 'vimeo';
 }
 
-export type UserRole = 'super_admin' | 'admin' | 'parent';
+export type UserRole = 'super_admin' | 'admin' | 'educator' | 'parent';
+
+export interface Classroom {
+  id: string;
+  name: string;
+  grade: string;
+  studentPin: string;
+  assignedPlaylists: string[];
+  studentCount?: number;
+}
+
+export interface SchoolData {
+  schoolName: string;
+  classes: Classroom[];
+  activeClassId?: string;
+  presentationMode: boolean;
+}
 
 export interface UserAccount {
   id: string;
   displayName: string;
   email: string;
   role: UserRole;
+  schoolName?: string;
   avatarUrl?: string;
   status: 'active' | 'suspended';
   uploadedCount?: number;

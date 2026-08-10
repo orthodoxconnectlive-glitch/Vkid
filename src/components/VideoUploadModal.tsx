@@ -15,11 +15,11 @@ import {
   Loader2,
   Link as LinkIcon,
   HardDriveUpload,
+  Check,
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
 import { uploadFileToSupabase } from '../lib/supabase';
-import { uploadVideoToBunny } from '../lib/bunny';
-import { saveMediaItemToStorage } from '../lib/mediaService';
+import { cleanFileNameToTitle, extractVideoFrameThumbnail, parseExternalVideoUrl } from '../utils/mediaUtils';
 
 import { SUPER_ADMIN_EMAIL } from './AdminModerationModal';
 
@@ -48,6 +48,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
   const [selectedMediaFile, setSelectedMediaFile] = useState<File | null>(null);
   const [selectedThumbnailFile, setSelectedThumbnailFile] = useState<File | null>(null);
   const [thumbnailPreviewUrl, setThumbnailPreviewUrl] = useState<string>('');
+  const [isExtractingThumbnail, setIsExtractingThumbnail] = useState<boolean>(false);
 
   // Manual URL State fallback
   const [mediaUrlInput, setMediaUrlInput] = useState('');
@@ -94,17 +95,29 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
   };
 
   // Media File Selection Handler
-  const handleMediaFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMediaFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       soundFx.playPop();
       setSelectedMediaFile(file);
       setErrorMsg('');
 
-      // Auto-populate title if empty
-      if (!title.trim()) {
-        const cleanName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-        setTitle(cleanName.replace(/[-_]/g, ' '));
+      // Auto-populate clean title from filename
+      const cleanTitle = cleanFileNameToTitle(file.name);
+      setTitle(cleanTitle);
+
+      // Auto-extract preview thumbnail frame at time code 00:00:01 if video
+      if (file.type.startsWith('video/') || mediaType === 'video') {
+        setIsExtractingThumbnail(true);
+        try {
+          const extracted = await extractVideoFrameThumbnail(file, 1.0);
+          setSelectedThumbnailFile(extracted.file);
+          setThumbnailPreviewUrl(extracted.dataUrl);
+        } catch (err) {
+          console.warn('Video frame thumbnail extraction notice:', err);
+        } finally {
+          setIsExtractingThumbnail(false);
+        }
       }
     }
   };
@@ -120,14 +133,15 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
     }
   };
 
-  // Form Submit Handler
+  // Form Submit & Supabase Direct Upload Handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     soundFx.playPop();
     setErrorMsg('');
 
-    if (!title.trim() || !description.trim()) {
-      setErrorMsg('Please enter a title and description.');
+    const formattedTitle = cleanFileNameToTitle(title.trim());
+    if (!formattedTitle || !description.trim()) {
+      setErrorMsg('Please enter a valid title and description.');
       return;
     }
 
@@ -143,92 +157,89 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
 
     setIsUploading(true);
     setUploadProgress(10);
-    setUploadStatusText('Preparing media upload...');
+    setUploadStatusText('Preparing media file for storage...');
 
     try {
       let finalMediaUrl = '';
       let finalThumbnailUrl = '';
-      let bunnyVideoId = '';
 
-      // 1. Upload Media File to Bunny Stream CDN (or Supabase Audio fallback)
+      let detectedProvider: 'direct' | 'youtube' | 'vimeo' = 'direct';
+
+      // 1. Upload Media File to Supabase Storage or Process URL Stream
       if (inputMode === 'file' && selectedMediaFile) {
-        if (mediaType === 'video' || mediaType === 'rhyme') {
-          setUploadStatusText(`Uploading ${selectedMediaFile.name} to Bunny Stream CDN...`);
-          setUploadProgress(30);
-
-          const bunnyResult = await uploadVideoToBunny(selectedMediaFile, title.trim());
-          finalMediaUrl = bunnyResult.videoUrl;
-          bunnyVideoId = bunnyResult.videoId;
-          setUploadProgress(60);
-        } else {
-          // Audiobooks upload to Supabase Storage
-          setUploadStatusText(`Uploading audio file (${formatFileSize(selectedMediaFile.size)})...`);
-          finalMediaUrl = await uploadFileToSupabase(
-            selectedMediaFile,
-            'vkid-media',
-            'audio',
-            (pct) => setUploadProgress(Math.floor(pct * 0.6))
-          );
-        }
+        setUploadStatusText(`Uploading ${selectedMediaFile.name} (${formatFileSize(selectedMediaFile.size)})...`);
+        finalMediaUrl = await uploadFileToSupabase(
+          selectedMediaFile,
+          'vkid-media',
+          mediaType === 'audiobook' ? 'audio' : 'videos',
+          (pct) => setUploadProgress(Math.floor(pct * 0.7))
+        );
       } else {
-        finalMediaUrl = mediaUrlInput.trim();
-        if (finalMediaUrl.includes('youtube.com/watch?v=')) {
-          const videoId = finalMediaUrl.split('v=')[1]?.split('&')[0];
-          if (videoId) finalMediaUrl = `https://www.youtube.com/embed/${videoId}`;
-        } else if (finalMediaUrl.includes('youtu.be/')) {
-          const videoId = finalMediaUrl.split('youtu.be/')[1]?.split('?')[0];
-          if (videoId) finalMediaUrl = `https://www.youtube.com/embed/${videoId}`;
+        const parsed = parseExternalVideoUrl(mediaUrlInput.trim());
+        finalMediaUrl = parsed.embedUrl;
+        detectedProvider = parsed.provider;
+
+        if (!thumbnailPreviewUrl && parsed.thumbnailUrl) {
+          setThumbnailPreviewUrl(parsed.thumbnailUrl);
         }
       }
 
-      // 2. Determine Thumbnail URL
+      // 2. Upload Thumbnail File to Supabase Storage (if selected or auto-extracted)
       if (selectedThumbnailFile) {
         setUploadStatusText('Uploading cover image thumbnail...');
-        finalThumbnailUrl = await uploadFileToSupabase(
-          selectedThumbnailFile,
-          'vkid-media',
-          'thumbnails',
-          (pct) => setUploadProgress(60 + Math.floor(pct * 0.2))
-        );
+        try {
+          finalThumbnailUrl = await uploadFileToSupabase(
+            selectedThumbnailFile,
+            'vkid-media',
+            'thumbnails',
+            (pct) => setUploadProgress(70 + Math.floor(pct * 0.3))
+          );
+        } catch (err) {
+          console.warn('Thumbnail storage upload fallback to preview URL:', err);
+          if (thumbnailPreviewUrl) finalThumbnailUrl = thumbnailPreviewUrl;
+        }
+      } else if (thumbnailPreviewUrl) {
+        finalThumbnailUrl = thumbnailPreviewUrl;
       } else if (thumbnailUrlInput.trim()) {
         finalThumbnailUrl = thumbnailUrlInput.trim();
-      } else if (bunnyVideoId) {
-        // Auto-generate Bunny Stream video thumbnail frame URL
-        finalThumbnailUrl = `https://video.bunnycdn.com/${bunnyVideoId}/thumbnail.jpg`;
       } else {
-        const defaultThumbs: Record<MediaType, string> = {
-          video: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=600&q=80',
-          audiobook: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=600&q=80',
-          rhyme: 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=600&q=80',
-        };
-        finalThumbnailUrl = defaultThumbs[mediaType];
+        const parsed = parseExternalVideoUrl(mediaUrlInput.trim());
+        if (parsed.thumbnailUrl) {
+          finalThumbnailUrl = parsed.thumbnailUrl;
+        } else {
+          const defaultThumbs: Record<MediaType, string> = {
+            video: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=600&q=80',
+            audiobook: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?auto=format&fit=crop&w=600&q=80',
+            rhyme: 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?auto=format&fit=crop&w=600&q=80',
+          };
+          finalThumbnailUrl = defaultThumbs[mediaType];
+        }
       }
 
-      setUploadProgress(85);
-      setUploadStatusText('Saving record to Supabase database...');
+      setUploadProgress(100);
+      setUploadStatusText('Finalizing submission...');
 
-      const newMedia: MediaItem & { bunnyId?: string } = {
+      const isUserAdmin = currentUserEmail && (
+        currentUserEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
+        currentUserEmail.toLowerCase().includes('admin')
+      );
+
+      const newMedia: MediaItem = {
         id: `m_user_${Date.now()}`,
-        title: title.trim(),
+        title: formattedTitle,
         type: mediaType,
         category,
         duration: mediaType === 'audiobook' ? '10:00' : '4:30',
         thumbnailUrl: finalThumbnailUrl,
         mediaUrl: finalMediaUrl,
-        bunnyId: bunnyVideoId || undefined,
         targetAgeGroup: targetAges,
         description: description.trim(),
         isPopular: false,
-        status: 'pending_approval',
+        status: isUserAdmin ? 'approved' : 'pending_approval',
         uploadedBy: currentUserEmail || 'parent@vkid.app',
         createdAt: new Date().toISOString(),
+        provider: detectedProvider,
       };
-
-      // 3. PERSIST DIRECTLY TO SUPABASE DATABASE
-      await saveMediaItemToStorage(newMedia);
-
-      setUploadProgress(100);
-      setUploadStatusText('Finalizing submission...');
 
       setTimeout(() => {
         setIsUploading(false);
@@ -266,7 +277,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
           <div>
             <h3 className="font-extrabold text-xl text-slate-900">{t('upload_media', 'Upload Kid Content')}</h3>
             <p className="text-xs text-slate-500 font-medium">
-              Direct device upload with Bunny Stream CDN & Supabase moderation.
+              Direct device upload with Supabase cloud storage & moderation.
             </p>
           </div>
         </div>
@@ -277,7 +288,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
             <h4 className="font-extrabold text-lg text-emerald-900">Submitted for Moderation!</h4>
             <p className="text-xs text-emerald-800 font-medium leading-relaxed">
-              Your video was uploaded to Bunny Stream CDN and sent to the VKid moderation queue. It will be published once approved.
+              Your media file was uploaded to Supabase storage and sent to the VKid moderation queue. It will be published once approved.
             </p>
             <button
               onClick={() => {
@@ -345,7 +356,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               </div>
             </div>
 
-            {/* Input Mode Toggle */}
+            {/* Input Mode Toggle (File Upload vs URL Stream) */}
             <div className="flex items-center justify-between bg-slate-100 p-1 rounded-2xl border border-slate-200">
               <button
                 type="button"
@@ -380,7 +391,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               </button>
             </div>
 
-            {/* File Dropzone */}
+            {/* 1. NATIVE FILE INPUT DROPZONE (Video or Audio File) */}
             {inputMode === 'file' ? (
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-1 flex items-center justify-between">
@@ -389,7 +400,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                       ? 'Select Audio File (MP3 / WAV / M4A) *'
                       : 'Select Video File (MP4 / WebM / MOV) *'}
                   </span>
-                  <span className="text-[10px] text-amber-600 font-bold">Bunny Stream CDN</span>
+                  <span className="text-[10px] text-amber-600 font-bold">Native File Upload</span>
                 </label>
 
                 <input
@@ -450,26 +461,66 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                 </div>
               </div>
             ) : (
-              <div>
-                <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                  Media Stream or Video Embed URL *
+              /* URL INPUT IMPORT MODE */
+              <div className="space-y-2">
+                <label className="block text-xs font-extrabold text-slate-700 flex items-center justify-between">
+                  <span>YouTube / Vimeo / MP4 Stream Link *</span>
+                  <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                    Import via Link
+                  </span>
                 </label>
                 <input
                   type="url"
-                  placeholder="https://www.youtube.com/watch?v=... or MP4/MP3 stream link"
+                  placeholder="https://www.youtube.com/watch?v=... or https://vimeo.com/..."
                   value={mediaUrlInput}
-                  onChange={(e) => setMediaUrlInput(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-amber-500"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMediaUrlInput(val);
+                    if (val.trim()) {
+                      const parsed = parseExternalVideoUrl(val);
+                      if (parsed.thumbnailUrl && !selectedThumbnailFile) {
+                        setThumbnailPreviewUrl(parsed.thumbnailUrl);
+                      }
+                    }
+                  }}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-indigo-500"
                 />
+
+                {mediaUrlInput.trim() && (
+                  <div className="flex items-center gap-2 p-2 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-800 text-xs font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>
+                      {parseExternalVideoUrl(mediaUrlInput).provider === 'youtube'
+                        ? 'YouTube Video Link Detected — Safe Ad-Free Player Enabled'
+                        : parseExternalVideoUrl(mediaUrlInput).provider === 'vimeo'
+                        ? 'Vimeo Video Link Detected — Safe Embed Player Enabled'
+                        : 'Direct Video Stream Link Detected'}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Thumbnail Upload */}
+            {/* 2. NATIVE FILE INPUT DROPZONE (Thumbnail / Cover Image) */}
             <div>
-              <label className="block text-xs font-extrabold text-slate-700 mb-1 flex items-center justify-between">
-                <span>Thumbnail / Cover Image (PNG, JPG, WebP)</span>
-                <span className="text-[10px] text-slate-400">accept="image/*"</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-extrabold text-slate-700">
+                  Thumbnail / Cover Image *
+                </label>
+                {isExtractingThumbnail ? (
+                  <span className="text-[10px] text-amber-600 font-bold flex items-center gap-1 animate-pulse">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Extracting Frame (00:00:01)...</span>
+                  </span>
+                ) : selectedThumbnailFile ? (
+                  <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                    <Check className="w-3 h-3" />
+                    <span>Preview Frame Captured</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400">PNG, JPG, WebP</span>
+                )}
+              </div>
 
               <input
                 ref={thumbFileInputRef}
@@ -483,20 +534,28 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               <div className="flex items-center gap-3">
                 <div
                   onClick={() => thumbFileInputRef.current?.click()}
-                  className="flex-1 border border-slate-300 hover:border-amber-400 rounded-xl p-2.5 bg-slate-50 hover:bg-slate-100 cursor-pointer flex items-center gap-2 transition-all"
+                  className="flex-1 border border-slate-300 hover:border-amber-400 rounded-xl p-2.5 bg-slate-50 hover:bg-slate-100 cursor-pointer flex items-center justify-between gap-2 transition-all"
                 >
-                  <ImageIcon className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span className="text-xs font-bold text-slate-700 truncate">
-                    {selectedThumbnailFile ? selectedThumbnailFile.name : 'Choose Thumbnail Image...'}
+                  <div className="flex items-center gap-2 truncate">
+                    <ImageIcon className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span className="text-xs font-bold text-slate-700 truncate">
+                      {selectedThumbnailFile ? selectedThumbnailFile.name : 'Upload Custom Cover Image...'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded shrink-0">
+                    Browse
                   </span>
                 </div>
 
                 {thumbnailPreviewUrl ? (
-                  <div className="relative w-12 h-10 rounded-lg overflow-hidden border-2 border-amber-400 shrink-0">
+                  <div className="relative w-14 h-11 rounded-lg overflow-hidden border-2 border-amber-400 shrink-0 shadow-sm group">
                     <img src={thumbnailPreviewUrl} alt="Preview" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[9px] text-white font-bold transition-opacity">
+                      Preview
+                    </div>
                   </div>
                 ) : (
-                  <div className="w-12 h-10 rounded-lg border border-dashed border-slate-300 bg-slate-100 flex items-center justify-center shrink-0">
+                  <div className="w-14 h-11 rounded-lg border border-dashed border-slate-300 bg-slate-100 flex items-center justify-center shrink-0">
                     <ImageIcon className="w-4 h-4 text-slate-400" />
                   </div>
                 )}
@@ -570,13 +629,13 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               />
             </div>
 
-            {/* Progress Bar */}
+            {/* UPLOADING PROGRESS BAR / SPINNER STATE */}
             {isUploading && (
               <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3 space-y-2 animate-in fade-in">
                 <div className="flex items-center justify-between text-xs font-extrabold text-amber-900">
                   <span className="flex items-center gap-1.5">
                     <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
-                    <span>{uploadStatusText || 'Uploading to Bunny CDN...'}</span>
+                    <span>{uploadStatusText || 'Uploading to Supabase Storage...'}</span>
                   </span>
                   <span>{uploadProgress}%</span>
                 </div>
@@ -607,7 +666,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Uploading to Bunny CDN...</span>
+                  <span>Uploading File to Storage...</span>
                 </>
               ) : (
                 <>
