@@ -19,6 +19,7 @@ import {
 import { soundFx } from '../utils/soundAndTTS';
 import { uploadFileToSupabase } from '../lib/supabase';
 import { uploadVideoToBunny } from '../lib/bunny';
+import { saveMediaItemToStorage } from '../lib/mediaService';
 
 import { SUPER_ADMIN_EMAIL } from './AdminModerationModal';
 
@@ -158,7 +159,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
           const bunnyResult = await uploadVideoToBunny(selectedMediaFile, title.trim());
           finalMediaUrl = bunnyResult.videoUrl;
           bunnyVideoId = bunnyResult.videoId;
-          setUploadProgress(70);
+          setUploadProgress(60);
         } else {
           // Audiobooks upload to Supabase Storage
           setUploadStatusText(`Uploading audio file (${formatFileSize(selectedMediaFile.size)})...`);
@@ -166,7 +167,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             selectedMediaFile,
             'vkid-media',
             'audio',
-            (pct) => setUploadProgress(Math.floor(pct * 0.7))
+            (pct) => setUploadProgress(Math.floor(pct * 0.6))
           );
         }
       } else {
@@ -180,17 +181,20 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         }
       }
 
-      // 2. Upload Thumbnail File to Supabase Storage (if selected)
+      // 2. Determine Thumbnail URL
       if (selectedThumbnailFile) {
         setUploadStatusText('Uploading cover image thumbnail...');
         finalThumbnailUrl = await uploadFileToSupabase(
           selectedThumbnailFile,
           'vkid-media',
           'thumbnails',
-          (pct) => setUploadProgress(70 + Math.floor(pct * 0.3))
+          (pct) => setUploadProgress(60 + Math.floor(pct * 0.2))
         );
       } else if (thumbnailUrlInput.trim()) {
         finalThumbnailUrl = thumbnailUrlInput.trim();
+      } else if (bunnyVideoId) {
+        // Auto-generate Bunny Stream video thumbnail frame URL
+        finalThumbnailUrl = `https://video.bunnycdn.com/${bunnyVideoId}/thumbnail.jpg`;
       } else {
         const defaultThumbs: Record<MediaType, string> = {
           video: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=600&q=80',
@@ -200,13 +204,8 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         finalThumbnailUrl = defaultThumbs[mediaType];
       }
 
-      setUploadProgress(100);
-      setUploadStatusText('Finalizing submission...');
-
-      const isUserAdmin = currentUserEmail && (
-        currentUserEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
-        currentUserEmail.toLowerCase().includes('admin')
-      );
+      setUploadProgress(85);
+      setUploadStatusText('Saving record to Supabase database...');
 
       const newMedia: MediaItem & { bunnyId?: string } = {
         id: `m_user_${Date.now()}`,
@@ -220,10 +219,16 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         targetAgeGroup: targetAges,
         description: description.trim(),
         isPopular: false,
-        status: isUserAdmin ? 'approved' : 'pending_approval',
+        status: 'pending_approval',
         uploadedBy: currentUserEmail || 'parent@vkid.app',
         createdAt: new Date().toISOString(),
       };
+
+      // 3. PERSIST DIRECTLY TO SUPABASE DATABASE
+      await saveMediaItemToStorage(newMedia);
+
+      setUploadProgress(100);
+      setUploadStatusText('Finalizing submission...');
 
       setTimeout(() => {
         setIsUploading(false);
