@@ -2,16 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { MediaItem, AgeGroup, MediaType } from '../types';
 import { fetchLatestMediaItems } from '../lib/mediaService';
 import { soundFx } from '../utils/soundAndTTS';
+import { TvVideoPlayer } from '../components/TvVideoPlayer';
 import {
   Sparkles,
   Film,
   Headphones,
   Music,
   Play,
-  Check,
   Search,
   Filter,
   RefreshCw,
+  X,
 } from 'lucide-react';
 
 interface FeedViewProps {
@@ -24,19 +25,17 @@ export const FeedView: React.FC<FeedViewProps> = ({ currentUserAge = '4-5' }) =>
   const [selectedType, setSelectedType] = useState<MediaType | 'all'>('all');
   const [selectedAge, setSelectedAge] = useState<AgeGroup | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+  
+  // Track which card ID is currently playing inline (YouTube-style)
+  const [activePlayingId, setActivePlayingId] = useState<string | null>(null);
 
   const loadMedia = async () => {
     setLoading(true);
     try {
-      // 1. Fetch latest entries from Supabase database via mediaService
       const allItems = await fetchLatestMediaItems();
-
-      // 2. Filter exclusively for approved/published content
       const approvedItems = allItems.filter(
         (item) => item.status === 'approved' || item.status === 'published'
       );
-
       setMediaItems(approvedItems);
     } catch (err) {
       console.error('Failed to load media items for VKid feed:', err);
@@ -49,7 +48,24 @@ export const FeedView: React.FC<FeedViewProps> = ({ currentUserAge = '4-5' }) =>
     loadMedia();
   }, []);
 
-  // Filter items based on format tab, age group, and search text
+  // Helper to extract Bunny Video GUID and generate automatic thumbnail frame
+  const getItemThumbnail = (item: MediaItem): string => {
+    if (item.thumbnailUrl && !item.thumbnailUrl.includes('unsplash') && !item.thumbnailUrl.includes('photo-1513519245088')) {
+      return item.thumbnailUrl;
+    }
+
+    // Extract GUID from mediaUrl or bunnyId field
+    const rawUrl = item.mediaUrl || '';
+    const guidMatch = rawUrl.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+    
+    if (guidMatch && guidMatch[0]) {
+      return `https://video.bunnycdn.com/${guidMatch[0]}/thumbnail.jpg`;
+    }
+
+    return item.thumbnailUrl || 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=600&q=80';
+  };
+
+  // Filter items based on type, age, and search query
   const filteredItems = mediaItems.filter((item) => {
     const matchesType = selectedType === 'all' || item.type === selectedType;
     const matchesAge =
@@ -91,7 +107,7 @@ export const FeedView: React.FC<FeedViewProps> = ({ currentUserAge = '4-5' }) =>
           </button>
         </div>
 
-        {/* Content Type Tabs */}
+        {/* Format Tabs */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           <button
             onClick={() => {
@@ -195,112 +211,105 @@ export const FeedView: React.FC<FeedViewProps> = ({ currentUserAge = '4-5' }) =>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredItems.map((item) => (
-            <div
-              key={item.id}
-              className="bg-white border-2 border-amber-200 hover:border-amber-400 rounded-3xl overflow-hidden shadow-md transition-all hover:-translate-y-1 flex flex-col group"
-            >
-              {/* Media Thumbnail Container */}
-              <div className="relative aspect-video bg-slate-900 overflow-hidden">
-                <img
-                  src={item.thumbnailUrl}
-                  alt={item.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                
-                {/* Media Type Badge */}
-                <div className="absolute top-3 left-3 px-2.5 py-1 rounded-xl bg-slate-900/80 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow">
-                  {item.type === 'video' && <Film className="w-3 h-3 text-rose-400" />}
-                  {item.type === 'audiobook' && <Headphones className="w-3 h-3 text-indigo-400" />}
-                  {item.type === 'rhyme' && <Music className="w-3 h-3 text-purple-400" />}
-                  <span>{item.type}</span>
-                </div>
+          {filteredItems.map((item) => {
+            const isPlaying = activePlayingId === item.id;
+            const computedThumbnail = getItemThumbnail(item);
 
-                {/* Duration Badge */}
-                <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded-lg bg-slate-900/80 text-white font-bold text-[10px]">
-                  {item.duration || '4:30'}
-                </div>
-
-                {/* Play Button Overlay */}
-                <button
-                  onClick={() => {
-                    soundFx.playPop();
-                    setActiveVideoUrl(item.mediaUrl);
-                  }}
-                  className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
-                >
-                  <div className="w-12 h-12 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
-                    <Play className="w-6 h-6 fill-current ml-0.5" />
-                  </div>
-                </button>
-              </div>
-
-              {/* Content Information */}
-              <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[11px] font-bold text-amber-600 truncate">
-                      {item.category}
-                    </span>
-                    <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md shrink-0">
-                      Ages {Array.isArray(item.targetAgeGroup) ? item.targetAgeGroup.join(', ') : 'All'}
-                    </span>
-                  </div>
-
-                  <h3 className="font-extrabold text-sm text-slate-900 line-clamp-1 group-hover:text-amber-600 transition-colors">
-                    {item.title}
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium line-clamp-2 mt-1 leading-relaxed">
-                    {item.description}
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => {
-                    soundFx.playPop();
-                    setActiveVideoUrl(item.mediaUrl);
-                  }}
-                  className="w-full bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-2.5 rounded-xl shadow transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>Watch & Learn</span>
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Video Player Lightbox / Modal */}
-      {activeVideoUrl && (
-        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in">
-          <div className="bg-black rounded-3xl max-w-4xl w-full border-4 border-amber-300 shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
-              <span className="text-xs font-extrabold text-amber-400 flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4" />
-                <span>VKid Bunny Stream Video Player</span>
-              </span>
-              <button
-                onClick={() => setActiveVideoUrl(null)}
-                className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs"
+            return (
+              <div
+                key={item.id}
+                className="bg-white border-2 border-amber-200 hover:border-amber-400 rounded-3xl overflow-hidden shadow-md transition-all flex flex-col group"
               >
-                Close Player
-              </button>
-            </div>
+                {/* Media Screen Container */}
+                <div className="relative aspect-video bg-black overflow-hidden rounded-t-3xl">
+                  {isPlaying ? (
+                    /* Inline YouTube-Style Player */
+                    <TvVideoPlayer mediaUrl={item.mediaUrl} title={item.title} />
+                  ) : (
+                    /* Card Thumbnail with Play Overlay */
+                    <div
+                      className="relative w-full h-full cursor-pointer"
+                      onClick={() => {
+                        soundFx.playPop();
+                        setActivePlayingId(item.id);
+                      }}
+                    >
+                      <img
+                        src={computedThumbnail}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
 
-            <div className="aspect-video w-full bg-black flex items-center justify-center">
-              {activeVideoUrl.includes('iframe') || activeVideoUrl.includes('embed') ? (
-                <iframe
-                  src={activeVideoUrl}
-                  className="w-full h-full border-0"
-                  allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
-                  allowFullScreen
-                />
-              ) : (
-                <video src={activeVideoUrl} controls autoPlay className="w-full h-full" />
-              )}
-            </div>
-          </div>
+                      {/* Type Badge */}
+                      <div className="absolute top-3 left-3 px-2.5 py-1 rounded-xl bg-slate-900/80 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow">
+                        {item.type === 'video' && <Film className="w-3 h-3 text-rose-400" />}
+                        {item.type === 'audiobook' && <Headphones className="w-3 h-3 text-indigo-400" />}
+                        {item.type === 'rhyme' && <Music className="w-3 h-3 text-purple-400" />}
+                        <span>{item.type}</span>
+                      </div>
+
+                      {/* Duration Badge */}
+                      <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded-lg bg-slate-900/80 text-white font-bold text-[10px]">
+                        {item.duration || '4:30'}
+                      </div>
+
+                      {/* Play Button Overlay */}
+                      <div className="absolute inset-0 bg-slate-900/30 flex items-center justify-center">
+                        <div className="w-12 h-12 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                          <Play className="w-6 h-6 fill-current ml-0.5" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Card Content Information */}
+                <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="text-[11px] font-bold text-amber-600 truncate">
+                        {item.category}
+                      </span>
+                      <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md shrink-0">
+                        Ages {Array.isArray(item.targetAgeGroup) ? item.targetAgeGroup.join(', ') : 'All'}
+                      </span>
+                    </div>
+
+                    <h3 className="font-extrabold text-sm text-slate-900 line-clamp-1 group-hover:text-amber-600 transition-colors">
+                      {item.title}
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium line-clamp-2 mt-1 leading-relaxed">
+                      {item.description}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      soundFx.playPop();
+                      setActivePlayingId(isPlaying ? null : item.id);
+                    }}
+                    className={`w-full font-extrabold text-xs py-2.5 rounded-xl shadow transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+                      isPlaying
+                        ? 'bg-slate-800 text-white hover:bg-slate-900'
+                        : 'bg-amber-500 hover:bg-amber-600 text-white'
+                    }`}
+                  >
+                    {isPlaying ? (
+                      <>
+                        <X className="w-4 h-4" />
+                        <span>Done Watching</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>Watch & Learn</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
