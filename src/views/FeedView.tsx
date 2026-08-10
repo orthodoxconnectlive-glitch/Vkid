@@ -1,594 +1,308 @@
 import React, { useState, useEffect } from 'react';
+import { MediaItem, AgeGroup, MediaType } from '../types';
+import { fetchLatestMediaItems } from '../lib/mediaService';
+import { soundFx } from '../utils/soundAndTTS';
 import {
-  Image,
-  Video,
-  Send,
-  Heart,
-  MessageCircle,
-  Repeat,
-  Share2,
-  Trash2,
-  Church,
   Sparkles,
-  Bookmark,
-  Flag,
-  UserPlus,
-  UserCheck,
+  Film,
+  Headphones,
+  Music,
+  Play,
   Check,
+  Search,
+  Filter,
+  RefreshCw,
 } from 'lucide-react';
-import { Post } from '../types';
-import { loadPosts, savePost, deletePost, BUNNY_STREAM_BASE, SEED_VIDEOS } from '../utils/posts';
-import { isFollowing, toggleFollow } from '../utils/follows';
-import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
-import { BunnyPlayer } from '../components/BunnyPlayer';
-import { ReshareModal } from '../components/ReshareModal';
-import { ReportContentModal } from '../components/ReportContentModal';
-import { StoriesBar } from '../components/StoriesBar';
 
-export const FeedView: React.FC = () => {
-  const { profile } = useAuth();
-  const { t } = useTheme();
+interface FeedViewProps {
+  currentUserAge?: AgeGroup;
+}
 
-  const [posts, setPosts] = useState<Post[]>([]);
+export const FeedView: React.FC<FeedViewProps> = ({ currentUserAge = '4-5' }) => {
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [feedTab, setFeedTab] = useState<'all' | 'following'>('all');
-  const [followedMap, setFollowedMap] = useState<Record<string, boolean>>({});
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<MediaType | 'all'>('all');
+  const [selectedAge, setSelectedAge] = useState<AgeGroup | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
 
-  // New post input state
-  const [newPostText, setNewPostText] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [videoUrl, setVideoUrl] = useState('');
-  const [showImageInput, setShowImageInput] = useState(false);
-  const [showVideoInput, setShowVideoInput] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const loadMedia = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch latest entries from Supabase database via mediaService
+      const allItems = await fetchLatestMediaItems();
 
-  // Comments drawer / modal state
-  const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
-  const [commentInput, setCommentInput] = useState('');
-  const [commentsMap, setCommentsMap] = useState<Record<string, string[]>>({
-    'post-seed-1': ['Blessed feast Father!', 'Glory to God in the highest.'],
-    'post-seed-2': ['Beautiful chanting!'],
-  });
+      // 2. Filter exclusively for approved/published content
+      const approvedItems = allItems.filter(
+        (item) => item.status === 'approved' || item.status === 'published'
+      );
 
-  // Reshare modal state
-  const [reshareTargetPost, setReshareTargetPost] = useState<Post | null>(null);
-
-  // Report modal state
-  const [reportModalData, setReportModalData] = useState<{
-    isOpen: boolean;
-    contentType: 'post' | 'comment';
-    contentId: string;
-    targetAuthorName: string;
-    snippet: string;
-  }>({
-    isOpen: false,
-    contentType: 'post',
-    contentId: '',
-    targetAuthorName: '',
-    snippet: '',
-  });
+      setMediaItems(approvedItems);
+    } catch (err) {
+      console.error('Failed to load media items for VKid feed:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetchPosts();
+    loadMedia();
   }, []);
 
-  const triggerToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 2500);
-  };
+  // Filter items based on format tab, age group, and search text
+  const filteredItems = mediaItems.filter((item) => {
+    const matchesType = selectedType === 'all' || item.type === selectedType;
+    const matchesAge =
+      selectedAge === 'all' ||
+      (Array.isArray(item.targetAgeGroup) && item.targetAgeGroup.includes(selectedAge as AgeGroup));
+    const matchesSearch =
+      !searchQuery.trim() ||
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.category.toLowerCase().includes(searchQuery.toLowerCase());
 
-  const fetchPosts = async () => {
-    setLoading(true);
-    const loaded = await loadPosts();
-    setPosts(loaded);
-
-    // Initialize follow status map for authors
-    const fMap: Record<string, boolean> = {};
-    loaded.forEach((p) => {
-      fMap[p.authorName] = isFollowing(p.authorName);
-    });
-    setFollowedMap(fMap);
-
-    setLoading(false);
-  };
-
-  const handleToggleFollowUser = (authorName: string) => {
-    const isNowFollowing = toggleFollow(authorName);
-    setFollowedMap((prev) => ({
-      ...prev,
-      [authorName]: isNowFollowing,
-    }));
-    triggerToast(
-      isNowFollowing
-        ? `Now following ${authorName}. You will see all their reflections!`
-        : `Unfollowed ${authorName}.`
-    );
-  };
-
-  const handleCreatePost = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPostText.trim() && !imageUrl && !videoUrl) return;
-
-    setIsSubmitting(true);
-
-    const created = await savePost({
-      text: newPostText.trim(),
-      authorName: profile?.full_name || 'Fr. Seraphim Rose',
-      authorParish: profile?.parish || 'St. Herman Monastery',
-      authorAvatar: profile?.avatar_url || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200',
-      authorId: profile?.id,
-      image: imageUrl || undefined,
-      video: videoUrl || undefined,
-    });
-
-    setPosts([created, ...posts]);
-    setNewPostText('');
-    setImageUrl('');
-    setVideoUrl('');
-    setShowImageInput(false);
-    setShowVideoInput(false);
-    setIsSubmitting(false);
-  };
-
-  const handleToggleLike = (postId: string) => {
-    setPosts((prev) =>
-      prev.map((p) => {
-        if (p.id === postId) {
-          const isLiked = !p.isLiked;
-          return {
-            ...p,
-            isLiked,
-            likesCount: isLiked ? (p.likesCount || 0) + 1 : Math.max(0, (p.likesCount || 1) - 1),
-          };
-        }
-        return p;
-      })
-    );
-  };
-
-  const handleAddComment = (postId: string) => {
-    if (!commentInput.trim()) return;
-
-    setCommentsMap((prev) => ({
-      ...prev,
-      [postId]: [...(prev[postId] || []), commentInput.trim()],
-    }));
-
-    setPosts((prev) =>
-      prev.map((p) => (p.id === postId ? { ...p, commentsCount: (p.commentsCount || 0) + 1 } : p))
-    );
-
-    setCommentInput('');
-  };
-
-  const handleDelete = async (postId: string) => {
-    await deletePost(postId);
-    setPosts((prev) => prev.filter((p) => p.id !== postId));
-  };
-
-  const handleOpenReport = (
-    contentType: 'post' | 'comment',
-    contentId: string,
-    targetAuthorName: string,
-    snippet: string
-  ) => {
-    setReportModalData({
-      isOpen: true,
-      contentType,
-      contentId,
-      targetAuthorName,
-      snippet,
-    });
-  };
-
-  const filteredPosts =
-    feedTab === 'all'
-      ? posts
-      : posts.filter(
-          (p) =>
-            followedMap[p.authorName] ||
-            (profile?.full_name && p.authorName.toLowerCase() === profile.full_name.toLowerCase())
-        );
+    return matchesType && matchesAge && matchesSearch;
+  });
 
   return (
-    <div className="space-y-6">
-      {/* Toast notification message */}
-      {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 px-4 py-2.5 rounded-2xl bg-[#3d2b18] text-[#f5ebd9] border-2 border-[#c5a059] shadow-2xl font-serif text-xs flex items-center gap-2 animate-bounce">
-          <Check className="w-4 h-4 text-[#c5a059]" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
-      {/* Stories Bar Component */}
-      <StoriesBar />
-
-      {/* Post Creation Box (Photo 2) */}
-      <div className="bg-[#f6ebd6] dark:bg-[#1c1611] border-2 border-[#c5a059] dark:border-[#8b6b4a] rounded-3xl p-4 shadow-lg">
-        <form onSubmit={handleCreatePost} className="space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-full bg-[#3d2b18] text-[#c5a059] flex items-center justify-center font-bold text-lg shrink-0 shadow-md border-2 border-[#c5a059]">
-              ☨
-            </div>
-            <div className="flex-1 rounded-2xl bg-[#eedcb5] dark:bg-[#282019] border border-[#c5a059] dark:border-[#8b6b4a] p-2.5">
-              <input
-                type="text"
-                value={newPostText}
-                onChange={(e) => setNewPostText(e.target.value)}
-                placeholder={t('sharePost')}
-                className="w-full bg-transparent text-xs font-serif uppercase tracking-wider text-[#3d2b18] dark:text-[#f5ebd9] placeholder-[#7c5f3d] dark:placeholder-[#a89379] focus:outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Media URL inputs */}
-          {showImageInput && (
+    <div className="space-y-6 pb-12">
+      {/* Search & Filter Header */}
+      <div className="bg-white/80 backdrop-blur-md rounded-3xl p-4 border-2 border-amber-200 shadow-md space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
-              type="url"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="Paste image URL (Unsplash, HTTPS)..."
-              className="w-full p-2.5 rounded-xl bg-[#eedcb5] dark:bg-[#282019] border border-[#c5a059] text-xs text-[#3d2b18] dark:text-[#f5ebd9] focus:outline-none"
+              type="text"
+              placeholder="Search videos, rhymes & stories..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-amber-400"
             />
-          )}
+          </div>
+          <button
+            onClick={() => {
+              soundFx.playPop();
+              loadMedia();
+            }}
+            className="p-2.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-2xl transition-colors cursor-pointer"
+            title="Refresh Feed"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
 
-          {showVideoInput && (
-            <div className="space-y-2">
-              <input
-                type="url"
-                value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
-                placeholder="Paste video URL or Bunny Stream link..."
-                className="w-full p-2.5 rounded-xl bg-[#eedcb5] dark:bg-[#282019] border border-[#c5a059] text-xs text-[#3d2b18] dark:text-[#f5ebd9] focus:outline-none font-mono text-[11px]"
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setVideoUrl(SEED_VIDEOS[0])}
-                  className="px-2 py-1 bg-[#e6d3ab] text-[#3d2b18] font-bold text-[10px] rounded border border-[#c5a059]"
-                >
-                  + Sample Bunny Video 1
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVideoUrl(SEED_VIDEOS[1])}
-                  className="px-2 py-1 bg-[#e6d3ab] text-[#3d2b18] font-bold text-[10px] rounded border border-[#c5a059]"
-                >
-                  + Sample Bunny Video 2
-                </button>
-              </div>
-            </div>
-          )}
+        {/* Content Type Tabs */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <button
+            onClick={() => {
+              soundFx.playPop();
+              setSelectedType('all');
+            }}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              selectedType === 'all'
+                ? 'bg-amber-500 text-white shadow-md'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>All Content</span>
+          </button>
 
-          <div className="flex items-center justify-between pt-2 border-t border-[#c5a059]/30">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowImageInput(!showImageInput)}
-                className={`p-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  showImageInput ? 'bg-[#c5a059] text-white font-bold' : 'text-[#7c5f3d] hover:text-[#3d2b18]'
-                }`}
-              >
-                <Image className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
-                <span className="hidden sm:inline font-serif uppercase tracking-wider text-[11px]">Photo</span>
-              </button>
+          <button
+            onClick={() => {
+              soundFx.playPop();
+              setSelectedType('video');
+            }}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              selectedType === 'video'
+                ? 'bg-rose-500 text-white shadow-md'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <Film className="w-3.5 h-3.5" />
+            <span>Videos</span>
+          </button>
 
-              <button
-                type="button"
-                onClick={() => setShowVideoInput(!showVideoInput)}
-                className={`p-2 rounded-xl text-xs flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  showVideoInput ? 'bg-[#c5a059] text-white font-bold' : 'text-[#7c5f3d] hover:text-[#3d2b18]'
-                }`}
-              >
-                <Video className="w-4 h-4 text-[#a8833c]" />
-                <span className="hidden sm:inline font-serif uppercase tracking-wider text-[11px]">Bunny Video</span>
-              </button>
-            </div>
+          <button
+            onClick={() => {
+              soundFx.playPop();
+              setSelectedType('audiobook');
+            }}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              selectedType === 'audiobook'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <Headphones className="w-3.5 h-3.5" />
+            <span>Audiobooks</span>
+          </button>
 
+          <button
+            onClick={() => {
+              soundFx.playPop();
+              setSelectedType('rhyme');
+            }}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              selectedType === 'rhyme'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <Music className="w-3.5 h-3.5" />
+            <span>Rhymes</span>
+          </button>
+        </div>
+
+        {/* Age Group Filters */}
+        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+            <Filter className="w-3 h-3" />
+            <span>Age:</span>
+          </span>
+          {(['all', '4-5', '6-7', '8-10'] as const).map((age) => (
             <button
-              type="submit"
-              disabled={isSubmitting || (!newPostText.trim() && !imageUrl && !videoUrl)}
-              className="px-5 py-2 rounded-xl bg-[#a8833c] hover:bg-[#8f6e30] text-white font-serif uppercase tracking-wider font-bold text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-50"
+              key={age}
+              onClick={() => {
+                soundFx.playPop();
+                setSelectedAge(age);
+              }}
+              className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                selectedAge === age
+                  ? 'bg-slate-800 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
             >
-              <Send className="w-3.5 h-3.5" />
-              <span>{isSubmitting ? 'Posting...' : t('post')}</span>
+              {age === 'all' ? 'All Ages' : `${age} yrs`}
             </button>
-          </div>
-        </form>
+          ))}
+        </div>
       </div>
 
-      {/* Feed Mode Switcher (ALL POSTS vs FOLLOWING) */}
-      <div className="flex items-center justify-between bg-[#f6ebd6] dark:bg-[#1c1611] border-2 border-[#c5a059] p-1.5 rounded-2xl shadow-md font-serif text-xs">
-        <button
-          onClick={() => setFeedTab('all')}
-          className={`flex-1 py-2 rounded-xl font-bold uppercase tracking-wider transition-all cursor-pointer text-center ${
-            feedTab === 'all'
-              ? 'bg-[#3d2b18] text-[#c5a059] shadow-md border border-[#c5a059]'
-              : 'text-[#7c5f3d] hover:text-[#3d2b18] dark:text-[#a89379]'
-          }`}
-        >
-          {t('allParishFeed')} ({posts.length})
-        </button>
-        <button
-          onClick={() => setFeedTab('following')}
-          className={`flex-1 py-2 rounded-xl font-bold uppercase tracking-wider transition-all cursor-pointer text-center ${
-            feedTab === 'following'
-              ? 'bg-[#3d2b18] text-[#c5a059] shadow-md border border-[#c5a059]'
-              : 'text-[#7c5f3d] hover:text-[#3d2b18] dark:text-[#a89379]'
-          }`}
-        >
-          {t('followingFeed')} ({filteredPosts.length})
-        </button>
-      </div>
-
-      {/* Main Feed Posts List */}
-      <div className="space-y-4">
-        {loading ? (
-          <div className="p-8 text-center bg-[#f6ebd6] dark:bg-[#1c1611] rounded-3xl border-2 border-[#c5a059]">
-            <Sparkles className="w-8 h-8 mx-auto text-[#a8833c] animate-spin mb-2" />
-            <p className="text-xs text-[#7c5f3d] font-serif uppercase tracking-wider">Loading parish feed...</p>
-          </div>
-        ) : filteredPosts.length === 0 ? (
-          <div className="p-8 text-center bg-[#f6ebd6] dark:bg-[#1c1611] rounded-3xl border-2 border-[#c5a059] text-[#7c5f3d] text-xs font-serif uppercase space-y-3">
-            <p className="font-bold text-[#3d2b18] dark:text-[#f5ebd9]">
-              {feedTab === 'following'
-                ? "You aren't following anyone with active posts yet."
-                : 'No posts found in the parish feed.'}
-            </p>
-            {feedTab === 'following' && (
-              <p className="text-[11px] text-[#a8833c]">
-                Switch to "All Parish Feed" to discover and follow other parish members!
-              </p>
-            )}
-          </div>
-        ) : (
-          filteredPosts.map((post) => (
+      {/* Main Feed Video Grid */}
+      {loading ? (
+        <div className="p-12 text-center bg-white rounded-3xl border-2 border-amber-200 shadow-sm space-y-3">
+          <Sparkles className="w-8 h-8 text-amber-500 animate-spin mx-auto" />
+          <p className="text-xs font-extrabold text-slate-600">Fetching approved media library...</p>
+        </div>
+      ) : filteredItems.length === 0 ? (
+        <div className="p-12 text-center bg-white rounded-3xl border-2 border-amber-200 shadow-sm space-y-3">
+          <Film className="w-10 h-10 text-slate-300 mx-auto" />
+          <h4 className="font-extrabold text-base text-slate-800">No media items found</h4>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto font-medium">
+            There are no approved videos matching your selected filters. Upload new videos using the upload button to submit them for approval!
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filteredItems.map((item) => (
             <div
-              key={post.id}
-              className="bg-[#f6ebd6] dark:bg-[#1c1611] border-2 border-[#c5a059] dark:border-[#8b6b4a] rounded-3xl p-5 shadow-lg transition-all"
+              key={item.id}
+              className="bg-white border-2 border-amber-200 hover:border-amber-400 rounded-3xl overflow-hidden shadow-md transition-all hover:-translate-y-1 flex flex-col group"
             >
-              {/* Reshare Header Notice */}
-              {post.reshareKind && (
-                <div className="flex items-center gap-1.5 text-xs text-[#d4af37] font-bold mb-3 pb-2 border-b border-[#d4af37]/20">
-                  <Repeat className="w-3.5 h-3.5" />
-                  <span>
-                    {post.reshareKind === 'quote' ? 'Quoted Post' : 'Reshared to Fellowship Feed'}
-                  </span>
+              {/* Media Thumbnail Container */}
+              <div className="relative aspect-video bg-slate-900 overflow-hidden">
+                <img
+                  src={item.thumbnailUrl}
+                  alt={item.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+                
+                {/* Media Type Badge */}
+                <div className="absolute top-3 left-3 px-2.5 py-1 rounded-xl bg-slate-900/80 backdrop-blur-md text-white font-black text-[10px] uppercase tracking-wider flex items-center gap-1 shadow">
+                  {item.type === 'video' && <Film className="w-3 h-3 text-rose-400" />}
+                  {item.type === 'audiobook' && <Headphones className="w-3 h-3 text-indigo-400" />}
+                  {item.type === 'rhyme' && <Music className="w-3 h-3 text-purple-400" />}
+                  <span>{item.type}</span>
                 </div>
-              )}
 
-              {/* Author Header (Matching Photo 2 + Follow Button) */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <img
-                      src={post.authorAvatar}
-                      alt={post.authorName}
-                      className="w-10 h-10 rounded-full object-cover border-2 border-[#c5a059]"
-                    />
-                    <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#3d2b18] text-[#c5a059] flex items-center justify-center text-[10px] font-bold border border-[#c5a059]">
-                      ☨
-                    </div>
+                {/* Duration Badge */}
+                <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded-lg bg-slate-900/80 text-white font-bold text-[10px]">
+                  {item.duration || '4:30'}
+                </div>
+
+                {/* Play Button Overlay */}
+                <button
+                  onClick={() => {
+                    soundFx.playPop();
+                    setActiveVideoUrl(item.mediaUrl);
+                  }}
+                  className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                >
+                  <div className="w-12 h-12 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
+                    <Play className="w-6 h-6 fill-current ml-0.5" />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="font-serif-coptic font-bold text-xs sm:text-sm text-[#3d2b18] dark:text-[#f5ebd9] uppercase tracking-wider">
-                        {post.authorName}
-                      </h4>
-
-                      {/* Follow / Following Button */}
-                      {profile?.full_name?.toLowerCase() !== post.authorName.toLowerCase() && (
-                        <button
-                          onClick={() => handleToggleFollowUser(post.authorName)}
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-serif font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
-                            followedMap[post.authorName]
-                              ? 'bg-[#eedcb5] dark:bg-[#282019] text-[#7c5f3d] border border-[#c5a059]'
-                              : 'bg-[#a8833c] hover:bg-[#8f6e30] text-white shadow-sm'
-                          }`}
-                        >
-                          {followedMap[post.authorName] ? (
-                            <>
-                              <UserCheck className="w-3 h-3 text-[#a8833c]" />
-                              <span>{t('following')}</span>
-                            </>
-                          ) : (
-                            <>
-                              <UserPlus className="w-3 h-3" />
-                              <span>{t('follow')}</span>
-                            </>
-                          )}
-                        </button>
-                      )}
-
-                      <span className="text-[10px] text-[#7c5f3d] dark:text-[#a89379] font-serif uppercase tracking-wider">
-                        · JUST NOW
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-[#7c5f3d] dark:text-[#a89379] font-serif uppercase tracking-wider mt-0.5 font-semibold">
-                      — RECORDED LIVE BROADCAST
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() =>
-                      handleOpenReport(
-                        'post',
-                        post.id,
-                        post.authorName,
-                        post.text || 'Post Media Content'
-                      )
-                    }
-                    className="p-1.5 rounded-lg text-[#7c5f3d] hover:text-[#3d2b18] hover:bg-[#e6d3ab] transition-colors cursor-pointer"
-                    title="Flag / Report Content"
-                  >
-                    <Flag className="w-3.5 h-3.5" />
-                  </button>
-
-                  {(profile?.id === post.authorId || profile?.role === 'admin' || profile?.role === 'owner') && (
-                    <button
-                      onClick={() => handleDelete(post.id)}
-                      className="p-1.5 rounded-lg text-[#7c5f3d] hover:text-red-700 hover:bg-red-100 transition-colors cursor-pointer"
-                      title="Delete Post"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
+                </button>
               </div>
 
-              {/* Text Content */}
-              {post.text && (
-                <p className="text-xs text-[#3d2b18] dark:text-[#f5ebd9] font-serif leading-relaxed mb-3 whitespace-pre-wrap">
-                  {post.text}
-                </p>
-              )}
-
-              {/* Image Media */}
-              {post.image && (
-                <div className="rounded-xl overflow-hidden mb-3 border border-[#d4af37]/30 max-h-96">
-                  <img src={post.image} alt="Post content" className="w-full h-full object-cover" />
-                </div>
-              )}
-
-              {/* Video Media (Bunny Stream) */}
-              {post.video && (
-                <div className="mb-3">
-                  <BunnyPlayer videoUrl={post.video} title={post.text} />
-                </div>
-              )}
-
-              {/* Quoted Sub-Post */}
-              {post.quotedPost && (
-                <div className="p-3 mb-3 rounded-xl bg-[#f5f2ed] border border-[#d4af37]/30 text-xs space-y-1">
-                  <div className="flex items-center gap-2">
-                    <img
-                      src={post.quotedPost.authorAvatar}
-                      alt={post.quotedPost.authorName}
-                      className="w-5 h-5 rounded-full object-cover border border-[#d4af37]"
-                    />
-                    <span className="font-bold text-[#5a4632]">{post.quotedPost.authorName}</span>
-                    <span className="text-[10px] text-[#8b6b4a]">• {post.quotedPost.authorParish}</span>
+              {/* Content Information */}
+              <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[11px] font-bold text-amber-600 truncate">
+                      {item.category}
+                    </span>
+                    <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md shrink-0">
+                      Ages {Array.isArray(item.targetAgeGroup) ? item.targetAgeGroup.join(', ') : 'All'}
+                    </span>
                   </div>
-                  <p className="text-[#2c2c2c] italic pl-7">"{post.quotedPost.text}"</p>
+
+                  <h3 className="font-extrabold text-sm text-slate-900 line-clamp-1 group-hover:text-amber-600 transition-colors">
+                    {item.title}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium line-clamp-2 mt-1 leading-relaxed">
+                    {item.description}
+                  </p>
                 </div>
-              )}
-
-              {/* Action Toolbar */}
-              <div className="flex items-center justify-between pt-3 border-t border-[#d4af37]/20 text-xs">
-                <button
-                  onClick={() => handleToggleLike(post.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-colors cursor-pointer ${
-                    post.isLiked
-                      ? 'bg-red-100 text-red-600 font-bold border border-red-200'
-                      : 'text-[#8b6b4a] hover:text-red-600 hover:bg-[#f1ebd7]'
-                  }`}
-                >
-                  <Heart className={`w-4 h-4 ${post.isLiked ? 'fill-current text-red-600' : ''}`} />
-                  <span>{post.likesCount || 0}</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveCommentPostId(activeCommentPostId === post.id ? null : post.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[#8b6b4a] hover:text-[#5a4632] hover:bg-[#f1ebd7] transition-colors cursor-pointer"
-                >
-                  <MessageCircle className="w-4 h-4 text-[#d4af37]" />
-                  <span>{post.commentsCount || 0}</span>
-                </button>
-
-                <button
-                  onClick={() => setReshareTargetPost(post)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[#8b6b4a] hover:text-[#5a4632] hover:bg-[#f1ebd7] transition-colors cursor-pointer"
-                >
-                  <Repeat className="w-4 h-4 text-[#d4af37]" />
-                  <span>{post.resharesCount || 0}</span>
-                </button>
 
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(`https://orthodoxconnect.live/post/${post.id}`);
+                    soundFx.playPop();
+                    setActiveVideoUrl(item.mediaUrl);
                   }}
-                  className="p-1.5 text-[#8b6b4a] hover:text-[#5a4632] hover:bg-[#f1ebd7] rounded-xl transition-colors cursor-pointer"
-                  title="Copy link"
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-2.5 rounded-xl shadow transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <Share2 className="w-4 h-4" />
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>Watch & Learn</span>
                 </button>
               </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-              {/* Comments Drawer */}
-              {activeCommentPostId === post.id && (
-                <div className="mt-3 pt-3 border-t border-[#d4af37]/20 space-y-2">
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                    {(commentsMap[post.id] || []).map((cText, idx) => (
-                      <div
-                        key={idx}
-                        className="p-2 rounded-lg bg-[#f5f2ed] border border-[#d4af37]/20 text-[11px] text-[#2c2c2c] flex items-center justify-between"
-                      >
-                        <div>
-                          <span className="font-bold text-[#5a4632] mr-2">Orthodox Member:</span>
-                          {cText}
-                        </div>
-                        <button
-                          onClick={() =>
-                            handleOpenReport(
-                              'comment',
-                              `comment-${post.id}-${idx}`,
-                              'Orthodox Member',
-                              cText
-                            )
-                          }
-                          className="text-[#8b6b4a] hover:text-amber-700 p-1"
-                          title="Report Comment"
-                        >
-                          <Flag className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+      {/* Video Player Lightbox / Modal */}
+      {activeVideoUrl && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 animate-in fade-in">
+          <div className="bg-black rounded-3xl max-w-4xl w-full border-4 border-amber-300 shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+              <span className="text-xs font-extrabold text-amber-400 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4" />
+                <span>VKid Bunny Stream Video Player</span>
+              </span>
+              <button
+                onClick={() => setActiveVideoUrl(null)}
+                className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs"
+              >
+                Close Player
+              </button>
+            </div>
 
-                  <div className="flex gap-2 pt-1">
-                    <input
-                      type="text"
-                      value={commentInput}
-                      onChange={(e) => setCommentInput(e.target.value)}
-                      placeholder="Write a spiritual reflection or comment..."
-                      className="flex-1 p-2 rounded-xl bg-[#f5f2ed] border border-[#d4af37]/30 text-xs text-[#2c2c2c] focus:outline-none focus:border-[#d4af37]"
-                    />
-                    <button
-                      onClick={() => handleAddComment(post.id)}
-                      className="px-3 py-1.5 bg-[#d4af37] hover:bg-[#b89528] text-white font-bold text-xs rounded-xl cursor-pointer"
-                    >
-                      Comment
-                    </button>
-                  </div>
-                </div>
+            <div className="aspect-video w-full bg-black flex items-center justify-center">
+              {activeVideoUrl.includes('iframe') || activeVideoUrl.includes('embed') ? (
+                <iframe
+                  src={activeVideoUrl}
+                  className="w-full h-full border-0"
+                  allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+                  allowFullScreen
+                />
+              ) : (
+                <video src={activeVideoUrl} controls autoPlay className="w-full h-full" />
               )}
             </div>
-          ))
-        )}
-      </div>
-
-      {/* Reshare Modal */}
-      <ReshareModal
-        post={reshareTargetPost}
-        isOpen={Boolean(reshareTargetPost)}
-        onClose={() => setReshareTargetPost(null)}
-        onReshareCreated={(newPost) => setPosts([newPost, ...posts])}
-      />
-
-      {/* Content Flagging & Reporting Modal */}
-      <ReportContentModal
-        isOpen={reportModalData.isOpen}
-        onClose={() => setReportModalData((prev) => ({ ...prev, isOpen: false }))}
-        contentType={reportModalData.contentType}
-        contentId={reportModalData.contentId}
-        targetAuthorName={reportModalData.targetAuthorName}
-        contentSnippet={reportModalData.snippet}
-      />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-
