@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ChildProfile, ScreenTimeConfig, UsageReportData } from '../../types';
-import { Clock, ShieldCheck, BarChart3, Users, Sparkles, X, Plus, Save, CheckCircle2, Moon, SlidersHorizontal, History, Film, ExternalLink, Trash2 } from 'lucide-react';
+import { Clock, ShieldCheck, BarChart3, Users, Sparkles, X, Plus, Save, CheckCircle2, Moon, SlidersHorizontal, History, Film, ExternalLink, Trash2, Camera } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell } from 'recharts';
 import { soundFx } from '../../utils/soundAndTTS';
+import { isImageUrl } from '../../utils/avatarUtils';
+import { AvatarUploadModal } from '../AvatarUploadModal';
 
 interface WatchHistoryItem {
   id: string;
@@ -38,6 +40,8 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
   const [childProfiles, setChildProfiles] = useState<ChildProfile[]>([...profiles]);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
   const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>([]);
+  const [editingChild, setEditingChild] = useState<ChildProfile | null>(null);
+  const [isNewChildAvatarModalOpen, setIsNewChildAvatarModalOpen] = useState(false);
 
   // Load Watch History from LocalStorage
   useEffect(() => {
@@ -502,12 +506,44 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
                 <h4 className="font-extrabold text-sm text-slate-800">Family Child Profiles</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {childProfiles.map((p) => (
-                    <div key={p.id} className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex items-center gap-3">
-                      <span className="text-3xl">{p.avatarUrl}</span>
-                      <div>
-                        <p className="font-black text-slate-900 text-sm">{p.name}</p>
-                        <p className="text-xs text-slate-500 font-medium">Age {p.age} • Daily Goal: {p.dailyGoalMinutes}m</p>
+                    <div key={p.id} className="bg-slate-50 rounded-2xl p-4 border border-slate-200 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="relative group shrink-0">
+                          <div className="w-12 h-12 rounded-full bg-amber-100 border-2 border-amber-300 flex items-center justify-center text-2xl shadow-inner overflow-hidden">
+                            {isImageUrl(p.avatarUrl) ? (
+                              <img src={p.avatarUrl} alt={p.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <span>{p.avatarUrl || '👤'}</span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundFx.playPop();
+                              setEditingChild(p);
+                            }}
+                            className="absolute -bottom-1 -right-1 p-1 bg-amber-500 hover:bg-amber-600 text-white rounded-full shadow border border-white transition-all cursor-pointer"
+                            title="Change Photo / Avatar"
+                          >
+                            <Camera className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-900 text-sm">{p.name}</p>
+                          <p className="text-xs text-slate-500 font-medium">Age {p.age} • Daily Goal: {p.dailyGoalMinutes}m</p>
+                        </div>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundFx.playPop();
+                          setEditingChild(p);
+                        }}
+                        className="px-3 py-1.5 bg-white hover:bg-amber-100 text-slate-700 hover:text-amber-900 rounded-xl border border-slate-200 font-bold text-xs shadow-xs transition-all cursor-pointer"
+                      >
+                        Change Photo
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -516,7 +552,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
               {/* Add New Profile Form */}
               <div className="bg-rose-50/50 rounded-2xl p-4 border-2 border-rose-200 space-y-3">
                 <h4 className="font-black text-sm text-slate-900">Add New Child Profile</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
                   <input
                     type="text"
                     placeholder="Child Name"
@@ -533,26 +569,62 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
                     onChange={(e) => setNewChildAge(Number(e.target.value))}
                     className="bg-white border border-rose-300 rounded-xl py-2 px-3 text-xs font-bold"
                   />
-                  <select
-                    value={newChildAvatar}
-                    onChange={(e) => setNewChildAvatar(e.target.value)}
-                    className="bg-white border border-rose-300 rounded-xl py-2 px-3 text-xs font-bold"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFx.playPop();
+                      setIsNewChildAvatarModalOpen(true);
+                    }}
+                    className="flex items-center justify-between bg-white border-2 border-rose-300 hover:border-rose-400 rounded-xl py-1.5 px-3 text-xs font-bold text-slate-800 transition-all cursor-pointer"
                   >
-                    <option value="🦁">🦁 Lion</option>
-                    <option value="🦄">🦄 Unicorn</option>
-                    <option value="🐻">🐻 Bear</option>
-                    <option value="🦊">🦊 Fox</option>
-                    <option value="🦖">🦖 Dino</option>
-                  </select>
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-rose-100 border border-rose-300 flex items-center justify-center text-sm overflow-hidden shrink-0">
+                        {isImageUrl(newChildAvatar) ? (
+                          <img src={newChildAvatar} alt="New Child Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <span>{newChildAvatar || '🦁'}</span>
+                        )}
+                      </div>
+                      <span>Select Avatar / Photo</span>
+                    </div>
+                    <Camera className="w-3.5 h-3.5 text-rose-500" />
+                  </button>
                 </div>
                 <button
                   onClick={handleAddChildProfile}
-                  className="bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1 shadow"
+                  className="bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-1 shadow cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>Add Child</span>
+                  <span>Add Child Profile</span>
                 </button>
               </div>
+
+              {/* Avatar Upload Modals */}
+              {editingChild && (
+                <AvatarUploadModal
+                  currentAvatar={editingChild.avatarUrl}
+                  title={`Update ${editingChild.name}'s Photo`}
+                  onSelectAvatar={(newAvatarUrl) => {
+                    const updated = childProfiles.map((item) =>
+                      item.id === editingChild.id ? { ...item, avatarUrl: newAvatarUrl } : item
+                    );
+                    setChildProfiles(updated);
+                    onUpdateProfiles(updated);
+                  }}
+                  onClose={() => setEditingChild(null)}
+                />
+              )}
+
+              {isNewChildAvatarModalOpen && (
+                <AvatarUploadModal
+                  currentAvatar={newChildAvatar}
+                  title="Choose Photo or Avatar for New Child"
+                  onSelectAvatar={(newAvatarUrl) => {
+                    setNewChildAvatar(newAvatarUrl);
+                  }}
+                  onClose={() => setIsNewChildAvatarModalOpen(false)}
+                />
+              )}
             </div>
           )}
 

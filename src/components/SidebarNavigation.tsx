@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SupportedLanguage } from '../types';
 import { SUPPORTED_LANGUAGES, getTranslation } from '../data/translations';
 import {
@@ -22,11 +22,14 @@ import {
   Building2,
   Monitor,
   Users,
+  Camera,
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
 import { AppUser } from '../context/AuthContext';
 import { checkIsAdmin } from './AdminModerationModal';
 import { useTvNavigation } from '../hooks/useTvNavigation';
+import { isImageUrl } from '../utils/avatarUtils';
+import { AvatarUploadModal } from './AvatarUploadModal';
 
 interface SidebarNavigationProps {
   isOpen: boolean;
@@ -185,8 +188,14 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
             {isAuthenticated && user ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-black text-sm flex items-center justify-center shadow shrink-0">
-                    {user.fullName ? user.fullName.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
+                  <div className="relative group shrink-0">
+                    <div className="w-10 h-10 rounded-full bg-indigo-600 border border-indigo-300 text-white font-black text-sm flex items-center justify-center shadow overflow-hidden">
+                      {isImageUrl(user.avatarUrl) ? (
+                        <img src={user.avatarUrl} alt={user.fullName || user.email} className="w-full h-full object-cover" />
+                      ) : (
+                        <span>{user.fullName ? user.fullName.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}</span>
+                      )}
+                    </div>
                   </div>
                   <div className="overflow-hidden flex-1">
                     <p className="font-extrabold text-xs text-slate-900 truncate">
@@ -325,25 +334,6 @@ export const SidebarNavigation: React.FC<SidebarNavigationProps> = ({
                 </div>
               </button>
             )}
-
-            {/* Upload Video Button */}
-            <button
-              onClick={() => {
-                soundFx.playPop();
-                onOpenUploadModal();
-              }}
-              className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-amber-50 hover:bg-amber-100 border-2 border-amber-200 text-slate-800 font-bold text-xs transition-all text-left shadow-xs group"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
-                  <UploadCloud className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="font-black text-slate-900 leading-tight">{t('upload_video', 'Upload Video & Story')}</p>
-                  <p className="text-[10px] text-amber-700 font-medium">Add new videos, cartoons or audiobooks</p>
-                </div>
-              </div>
-            </button>
 
             {/* Parent Zone PIN Button */}
             <button

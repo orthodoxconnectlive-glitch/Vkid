@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { UserAccount, MediaItem, SupportedLanguage } from '../types';
 import { getTranslation } from '../data/translations';
-import { X, Mail, Shield, Film, CheckCircle2, AlertOctagon, User, Play, Headphones, Music } from 'lucide-react';
+import { X, Mail, Shield, Film, CheckCircle2, AlertOctagon, User, Play, Headphones, Music, Camera } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
+import { isImageUrl } from '../utils/avatarUtils';
+import { AvatarUploadModal } from './AvatarUploadModal';
 
 interface UserProfileModalProps {
   user: UserAccount;
   userMediaItems: MediaItem[];
   currentLanguage: SupportedLanguage;
   onPlayMedia?: (item: MediaItem) => void;
+  onUpdateAvatar?: (userId: string, avatarUrl: string) => void;
   onClose: () => void;
 }
 
@@ -17,9 +20,20 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   userMediaItems,
   currentLanguage,
   onPlayMedia,
+  onUpdateAvatar,
   onClose,
 }) => {
   const t = (key: string, fallback?: string) => getTranslation(currentLanguage, key, fallback);
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+  const [currentAvatarUrl, setCurrentAvatarUrl] = useState(user.avatarUrl || '👤');
+
+  const handleSelectAvatar = (newAvatar: string) => {
+    setCurrentAvatarUrl(newAvatar);
+    user.avatarUrl = newAvatar;
+    if (onUpdateAvatar) {
+      onUpdateAvatar(user.id, newAvatar);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
@@ -37,8 +51,25 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         {/* Profile Card Header */}
         <div className="flex items-center gap-4 bg-gradient-to-r from-amber-50 to-orange-50 p-4 rounded-2xl border border-amber-200">
-          <div className="w-16 h-16 rounded-2xl bg-amber-200 border-2 border-amber-400 flex items-center justify-center text-3xl shadow-inner shrink-0">
-            {user.avatarUrl || '👤'}
+          <div className="relative group shrink-0">
+            <div className="w-16 h-16 rounded-2xl bg-amber-200 border-2 border-amber-400 flex items-center justify-center text-3xl shadow-inner overflow-hidden">
+              {isImageUrl(currentAvatarUrl) ? (
+                <img src={currentAvatarUrl} alt={user.displayName} className="w-full h-full object-cover" />
+              ) : (
+                <span>{currentAvatarUrl || '👤'}</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playPop();
+                setIsAvatarPickerOpen(true);
+              }}
+              className="absolute -bottom-1 -right-1 p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-full shadow border-2 border-white transition-transform active:scale-90 cursor-pointer"
+              title="Change Profile Photo"
+            >
+              <Camera className="w-3.5 h-3.5" />
+            </button>
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -160,10 +191,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             soundFx.playPop();
             onClose();
           }}
-          className="w-full bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs py-2.5 rounded-xl shadow"
+          className="w-full bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs py-2.5 rounded-xl shadow cursor-pointer"
         >
           Close Profile
         </button>
+
+        {isAvatarPickerOpen && (
+          <AvatarUploadModal
+            currentAvatar={currentAvatarUrl}
+            title={`Update ${user.displayName}'s Profile Photo`}
+            onSelectAvatar={handleSelectAvatar}
+            onClose={() => setIsAvatarPickerOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

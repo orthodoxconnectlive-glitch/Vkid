@@ -4,6 +4,7 @@ import { Play, Sparkles, Trophy, Tv, Gamepad2, Volume2, Star, Rocket, Flame, Sea
 import { soundFx, speakText } from '../utils/soundAndTTS';
 import { getTranslation } from '../data/translations';
 import { MediaLibrary } from './MediaLibrary';
+import { isImageUrl } from '../utils/avatarUtils';
 import { MathGame } from './Games/MathGame';
 import { SpellingGame } from './Games/SpellingGame';
 import { MemoryGame } from './Games/MemoryGame';
@@ -22,8 +23,12 @@ interface KidHomeFeedProps {
   currentLanguage?: SupportedLanguage;
   isAdmin?: boolean;
   currentUserEmail?: string;
+  userRole?: string;
+  isAuthenticated?: boolean;
   onDeleteVideo?: (id: string) => Promise<void> | void;
   onApproveVideo?: (id: string) => Promise<void> | void;
+  onOpenUploadModal?: () => void;
+  onOpenParentPin?: () => void;
 }
 
 export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
@@ -38,8 +43,12 @@ export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
   currentLanguage = 'en',
   isAdmin = false,
   currentUserEmail,
+  userRole,
+  isAuthenticated = false,
   onDeleteVideo,
   onApproveVideo,
+  onOpenUploadModal,
+  onOpenParentPin,
 }) => {
   const t = (key: string, fallback: string) => getTranslation(currentLanguage, key, fallback);
   const [activeTab, setActiveTab] = useState<'home' | 'media' | 'games' | 'rewards'>('home');
@@ -235,8 +244,12 @@ export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
               <div className="bg-gradient-to-r from-amber-400 via-rose-400 to-indigo-500 rounded-3xl p-4 sm:p-6 text-white shadow-lg relative overflow-hidden">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10 text-center sm:text-left">
                   <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4">
-                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-white/20 backdrop-blur-md border-2 border-white/40 flex items-center justify-center text-3xl sm:text-4xl shadow-inner animate-bounce-slow shrink-0">
-                      {currentProfile.avatarUrl}
+                    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-3xl bg-white/20 backdrop-blur-md border-2 border-white/40 flex items-center justify-center text-3xl sm:text-4xl shadow-inner animate-bounce-slow shrink-0 overflow-hidden">
+                      {isImageUrl(currentProfile.avatarUrl) ? (
+                        <img src={currentProfile.avatarUrl} alt={currentProfile.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span>{currentProfile.avatarUrl || '👤'}</span>
+                      )}
                     </div>
                     <div>
                       <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -338,8 +351,12 @@ export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
                   currentLanguage={currentLanguage}
                   isAdmin={isAdmin}
                   currentUserEmail={currentUserEmail}
+                  userRole={userRole}
+                  isAuthenticated={isAuthenticated}
                   onDeleteVideo={onDeleteVideo}
                   onApproveVideo={onApproveVideo}
+                  onOpenUploadModal={onOpenUploadModal}
+                  onOpenParentPin={onOpenParentPin}
                 />
               </div>
             </div>
@@ -355,8 +372,12 @@ export const KidHomeFeed: React.FC<KidHomeFeedProps> = ({
               currentLanguage={currentLanguage}
               isAdmin={isAdmin}
               currentUserEmail={currentUserEmail}
+              userRole={userRole}
+              isAuthenticated={isAuthenticated}
               onDeleteVideo={onDeleteVideo}
               onApproveVideo={onApproveVideo}
+              onOpenUploadModal={onOpenUploadModal}
+              onOpenParentPin={onOpenParentPin}
             />
           )}
 

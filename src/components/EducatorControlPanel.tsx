@@ -19,9 +19,12 @@ import {
   Sparkles,
   ShieldCheck,
   Save,
+  Camera,
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
 import { useTvNavigation } from '../hooks/useTvNavigation';
+import { isImageUrl } from '../utils/avatarUtils';
+import { AvatarUploadModal } from './AvatarUploadModal';
 
 interface EducatorControlPanelProps {
   isOpen: boolean;
@@ -55,6 +58,7 @@ export const EducatorControlPanel: React.FC<EducatorControlPanelProps> = ({
   } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'classes' | 'playlists' | 'presentation'>('classes');
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
 
   // Local state for editing school name
   const [schoolNameInput, setSchoolNameInput] = useState<string>(
@@ -186,8 +190,25 @@ export const EducatorControlPanel: React.FC<EducatorControlPanelProps> = ({
         {/* Modal Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-200">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
-              <GraduationCap className="w-7 h-7" />
+            <div className="relative group shrink-0">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md overflow-hidden text-2xl border-2 border-indigo-300">
+                {isImageUrl(user?.avatarUrl) ? (
+                  <img src={user?.avatarUrl} alt={user?.fullName || 'Educator'} className="w-full h-full object-cover" />
+                ) : (
+                  <GraduationCap className="w-7 h-7" />
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  soundFx.playPop();
+                  setIsAvatarModalOpen(true);
+                }}
+                className="absolute -bottom-1 -right-1 p-1 bg-amber-500 hover:bg-amber-600 text-white rounded-full shadow border border-white transition-transform active:scale-90 cursor-pointer"
+                title="Update Educator / School Photo"
+              >
+                <Camera className="w-3 h-3" />
+              </button>
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -567,6 +588,17 @@ export const EducatorControlPanel: React.FC<EducatorControlPanelProps> = ({
               </div>
             </div>
           </div>
+        )}
+
+        {isAvatarModalOpen && user && (
+          <AvatarUploadModal
+            currentAvatar={user.avatarUrl || '🎓'}
+            title="Choose Educator Photo or School Logo"
+            onSelectAvatar={(newAvatar) => {
+              user.avatarUrl = newAvatar;
+            }}
+            onClose={() => setIsAvatarModalOpen(false)}
+          />
         )}
       </div>
     </div>

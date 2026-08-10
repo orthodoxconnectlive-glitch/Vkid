@@ -367,8 +367,12 @@ function AppInner() {
             currentLanguage={currentLanguage}
             isAdmin={isAdmin}
             currentUserEmail={currentUserEmail}
+            userRole={user?.role}
+            isAuthenticated={!!user}
             onDeleteVideo={handleRejectVideo}
             onApproveVideo={handleApproveVideo}
+            onOpenUploadModal={() => setIsUploadModalOpen(true)}
+            onOpenParentPin={() => setIsParentPinOpen(true)}
           />
         </main>
 

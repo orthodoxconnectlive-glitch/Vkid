@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MediaItem, MediaType, AgeGroup, SupportedLanguage } from '../types';
-import { Play, Headphones, Music, Star, Search, X, Volume2, Sparkles, Heart, Trash2, ShieldCheck, ExternalLink, ChevronRight, PlayCircle } from 'lucide-react';
+import { Play, Headphones, Music, Star, Search, X, Volume2, Sparkles, Heart, Trash2, ShieldCheck, ExternalLink, ChevronRight, PlayCircle, UploadCloud } from 'lucide-react';
 import { soundFx, speakText } from '../utils/soundAndTTS';
 import { getTranslation } from '../data/translations';
 import { TvVideoPlayer } from './TvVideoPlayer';
@@ -16,8 +16,12 @@ interface MediaLibraryProps {
   currentLanguage?: SupportedLanguage;
   isAdmin?: boolean;
   currentUserEmail?: string;
+  userRole?: string;
+  isAuthenticated?: boolean;
   onDeleteVideo?: (id: string) => Promise<void> | void;
   onApproveVideo?: (id: string) => Promise<void> | void;
+  onOpenUploadModal?: () => void;
+  onOpenParentPin?: () => void;
 }
 
 export const MediaLibrary: React.FC<MediaLibraryProps> = ({
@@ -29,8 +33,12 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   currentLanguage = 'en',
   isAdmin = false,
   currentUserEmail,
+  userRole,
+  isAuthenticated = false,
   onDeleteVideo,
   onApproveVideo,
+  onOpenUploadModal,
+  onOpenParentPin,
 }) => {
   const t = (key: string, fallback: string) => getTranslation(currentLanguage, key, fallback);
   const [selectedType, setSelectedType] = useState<MediaType | 'all'>('all');
@@ -39,6 +47,25 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   const [activeMedia, setActiveMedia] = useState<MediaItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<MediaItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleUploadClick = () => {
+    soundFx.playPop();
+    const isAuthorizedRole =
+      isAdmin ||
+      userRole === 'parent' ||
+      userRole === 'educator' ||
+      userRole === 'admin' ||
+      userRole === 'super_admin';
+
+    if (isAuthorizedRole && onOpenUploadModal) {
+      onOpenUploadModal();
+    } else if (onOpenParentPin) {
+      speakText('Parent PIN required to upload video');
+      onOpenParentPin();
+    } else if (onOpenUploadModal) {
+      onOpenUploadModal();
+    }
+  };
 
   // Helper to record watch history into localStorage
   const recordWatchHistory = (item: MediaItem) => {
@@ -125,14 +152,25 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
             />
           </div>
 
-          {/* Type Category Pills */}
+          {/* Type Category Pills & Upload CTA */}
           <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+            {/* Prominent Upload Video CTA Button */}
+            <button
+              type="button"
+              onClick={handleUploadClick}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:from-amber-500 hover:to-orange-500 text-slate-900 font-extrabold text-xs px-3.5 py-1.5 rounded-full shadow-sm border border-amber-300 transition-all cursor-pointer active:scale-95 shrink-0"
+              title="Upload a new kid-friendly video, cartoon or story"
+            >
+              <UploadCloud className="w-4 h-4 text-amber-950" />
+              <span>+ Upload Video</span>
+            </button>
+
             <button
               onClick={() => {
                 soundFx.playPop();
                 setSelectedType('all');
               }}
-              className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all ${
+              className={`px-3 py-1.5 rounded-full text-xs font-extrabold whitespace-nowrap transition-all cursor-pointer ${
                 selectedType === 'all' ? 'bg-amber-500 text-white shadow' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
