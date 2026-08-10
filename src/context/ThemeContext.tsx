@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { ThemeMode, Language } from '../types';
+
+export type ThemeMode = 'light' | 'dark' | 'playful';
+export type Language = 'en' | 'ar';
 
 interface ThemeContextType {
   theme: ThemeMode;
@@ -11,178 +13,62 @@ interface ThemeContextType {
 
 const translations: Record<Language, Record<string, string>> = {
   en: {
-    appName: 'OrthodoxConnect',
-    tagline: 'Orthodox Fellowship & Community Network',
-    feed: 'Feed',
-    reels: 'Reels',
-    goLive: 'Go Live',
-    myNetwork: 'My Network',
-    messages: 'Messages',
-    calendar: 'Calendar',
-    adminPanel: 'Admin Panel',
-    profile: 'Profile',
-    notifications: 'Notifications',
-    inviteFriends: 'Invite Friends',
-    searchParish: 'Search posts, saints, or parishes...',
-    dailyCommemoration: 'Daily Commemoration',
-    dailyScripture: 'Daily Scripture',
-    fastingSeason: 'Fasting Season',
-    sharePost: 'Share something with your parish fellowship...',
-    post: 'Post',
-    like: 'Blessing / Like',
-    comment: 'Comment',
-    reshare: 'Reshare',
-    quote: 'Quote',
-    activeChats: 'Active Chats',
-    onlineNow: 'Online Now',
-    editProfile: 'Edit Profile',
+    appName: 'VKid',
+    tagline: 'Child-Safe Educational & Video Streaming Platform',
+    feed: 'Explore Videos',
+    library: 'My Library',
+    rewards: 'Badges & Rewards',
+    parentDashboard: 'Parent Control Panel',
+    profile: 'Kid Profile',
+    notifications: 'Alerts',
+    searchVideos: 'Search safe videos, channels, or topics...',
+    uploadVideo: 'Upload Video',
+    approved: 'Approved',
+    pendingModeration: 'Pending Moderation',
+    like: 'Favorite',
+    share: 'Share',
     signOut: 'Sign Out',
     signIn: 'Sign In',
-    signUp: 'Sign Up',
-    copyLink: 'Copy Link',
-    shareWhatsApp: 'Share via WhatsApp',
-    referralLink: 'Referral Invite Link',
-    scanQr: 'Scan QR Code to Join OrthodoxConnect',
+    signUp: 'Create Kids Account',
     language: 'Language',
     themeMode: 'Theme Mode',
-    ancientGold: 'Ancient Gold',
-    dark: 'Dark',
-    light: 'Light',
+    playful: 'Playful Yellow',
+    dark: 'Dark Mode',
+    light: 'Light Mode',
     arabic: 'العربية',
     english: 'English',
-    users: 'Registered Users',
-    activeSessions: 'Active Sessions',
-    userDirectory: 'User Directory',
-    promoteAdmin: 'Promote to Admin',
-    demoteUser: 'Demote to User',
-    role: 'Role',
-    parish: 'Parish / Monastery',
-    bio: 'Biography',
-    fullName: 'Full Name',
-    password: 'New Password',
-    updateProfile: 'Update Profile',
-    liveStreams: 'Parish Live Streams',
-    joinRoom: 'Join Room',
-    activeMembers: 'active members',
-    blessingRequest: 'Ask for Priest Blessing',
-    send: 'Send',
-    typeMessage: 'Write a message...',
-    allParishFeed: 'All Parish Feed',
-    followingFeed: 'Following Feed',
-    peopleIFollow: 'People I Follow',
-    myJoinedGroups: 'My Joined Groups',
-    discoverCommunity: 'Discover Community',
-    parishEventsTitle: 'Parish Events & Liturgical Calendar',
-    parishEventsSub: 'Divine Liturgies, Feasts, Bible Studies, Pilgrimages, and Community Gatherings',
-    createParishEvent: 'Create Parish Event',
-    parishEventsTab: 'Parish Events',
-    orthodoxFeastsTab: 'Orthodox Feasts & Fasting Rule',
-    todaysCommemoration: "TODAY'S COMMEMORATION",
-    upcomingGreatFeasts: 'Upcoming Great Feasts & Fasting Rule',
-    enterRoom: 'Enter Room',
-    joinGroup: 'Join Group',
-    joined: 'Joined',
-    leaveGroup: 'Leave',
-    follow: 'Follow',
-    following: 'Following',
-    unfollow: 'Unfollow',
-    host: 'Host',
-    shareStory: 'Share Story',
-    parishStory: 'Parish Story',
-    uploadReel: 'Upload Reel',
-    startStream: 'Start Stream',
-    markAllRead: 'Mark All as Read',
-    clearAll: 'Clear All',
-    noNotifications: 'No notifications yet',
-    referralSub: 'Share parish referral link & QR code with your community.',
-    saintOfTheDay: 'Saint of the Day',
+    parentalPin: 'Parental PIN',
+    screenTimeLimit: 'Screen Time Limit',
+    ttsEnabled: 'Read Aloud Voice',
   },
   ar: {
-    appName: 'أورثوذكس كونكت',
-    tagline: 'شبكة التواصل والأخوة الأرثوذكسية',
-    feed: 'المنشورات',
-    reels: 'فيديوهات ريلز',
-    goLive: 'بث مباشر',
-    myNetwork: 'شبكتي وغرف الأخوة',
-    messages: 'الرسائل',
-    calendar: 'التقويم الكنسي',
-    adminPanel: 'لوحة الإدارة',
-    profile: 'الملف الشخصي',
-    notifications: 'الإشعارات',
-    inviteFriends: 'دعوة الأصدقاء',
-    searchParish: 'ابحث في المنشورات، القديسين، أو الرعايا...',
-    dailyCommemoration: 'تذكار القديسين اليومي',
-    dailyScripture: 'القراءة اليومية',
-    fastingSeason: 'فترة الصوم',
-    sharePost: 'شارك تأملاً أو خبراً مع رعيتك...',
-    post: 'نشر',
-    like: 'بركة / إعجاب',
-    comment: 'تعليق',
-    reshare: 'إعادة مشاركة',
-    quote: 'اقتباس',
-    activeChats: 'المحادثات النشطة',
-    onlineNow: 'متصل الآن',
-    editProfile: 'تعديل الملف الشخصي',
+    appName: 'ڤي كيد - VKid',
+    tagline: 'منصة آمنة وتعليمية لفيديوهات الأطفال',
+    feed: 'استكشف الفيديوهات',
+    library: 'مكتبتي',
+    rewards: 'الأوسمة والجوائز',
+    parentDashboard: 'لوحة التحكم للوالدين',
+    profile: 'ملف الطفل',
+    notifications: 'التنبيهات',
+    searchVideos: 'ابحث عن فيديوهات آمنة وقنوات...',
+    uploadVideo: 'رفع فيديو',
+    approved: 'مقبول',
+    pendingModeration: 'قيد المراجعة',
+    like: 'المفضلة',
+    share: 'مشاركة',
     signOut: 'تسجيل الخروج',
     signIn: 'تسجيل الدخول',
-    signUp: 'إنشاء حساب',
-    copyLink: 'نسخ الرابط',
-    shareWhatsApp: 'مشاركة عبر واتساب',
-    referralLink: 'رابط الدعوة الخاص بك',
-    scanQr: 'امسح رمز QR للانضمام إلى أورثوذكس كونكت',
+    signUp: 'إنشاء حساب جديد',
     language: 'اللغة',
     themeMode: 'المظهر',
-    ancientGold: 'النمط الذهبي القديم',
+    playful: 'أصفر مبهج',
     dark: 'الداكن',
-    light: 'الفياتح',
+    light: 'الفاتح',
     arabic: 'العربية',
     english: 'English',
-    users: 'المستخدمون المسجلون',
-    activeSessions: 'الجلسات النشطة',
-    userDirectory: 'دليل الأعضاء',
-    promoteAdmin: 'ترقية إلى مسؤول',
-    demoteUser: 'تنزيل إلى مستخدم',
-    role: 'الرتبة',
-    parish: 'الرعية / الدير',
-    bio: 'السيرة الذاتية',
-    fullName: 'الاسم الكامل',
-    password: 'كلمة المرور الجديدة',
-    updateProfile: 'حفظ التغييرات',
-    liveStreams: 'البث المباشر للرعايا',
-    joinRoom: 'الانضمام إلى الغرفة',
-    activeMembers: 'أعضاء متصلين',
-    blessingRequest: 'طلب بركة الكاهن',
-    send: 'إرسال',
-    typeMessage: 'اكتب رسالة...',
-    allParishFeed: 'منشورات الرعية العامة',
-    followingFeed: 'منشورات المتابَعين',
-    peopleIFollow: 'الأعضاء المتابَعون',
-    myJoinedGroups: 'المجموعات المنضم إليها',
-    discoverCommunity: 'استكشاف المجتمع',
-    parishEventsTitle: 'فعاليات الكنيسة والتقويم اللتيرجي',
-    parishEventsSub: 'القداسات الإلهية، الأعياد، دراسات الكتاب المقدس، واللقاءات الكنسية',
-    createParishEvent: 'إضافة فعالية كنسية',
-    parishEventsTab: 'الفعاليات الكنسية',
-    orthodoxFeastsTab: 'الأعياد الأرثوذكسية وقواعد الصوم',
-    todaysCommemoration: 'تذكار اليوم الكنسي',
-    upcomingGreatFeasts: 'الأعياد الكنسية القادمة وقواعد الصوم',
-    enterRoom: 'دخول الغرفة',
-    joinGroup: 'انضمام للمجموعة',
-    joined: 'منضم',
-    leaveGroup: 'مغادرة',
-    follow: 'متابعة',
-    following: 'مُتابَع',
-    unfollow: 'إلغاء المتابعة',
-    host: 'المستضيف',
-    shareStory: 'إضافة قصة',
-    parishStory: 'قصص الرعية',
-    uploadReel: 'رفع فيديو ريلز',
-    startStream: 'بدء البث المباشر',
-    markAllRead: 'تحديد الكل كمقروء',
-    clearAll: 'مسح الكل',
-    noNotifications: 'لا توجد إشعارات حالياً',
-    referralSub: 'شارك رابط الدعوة ورمز QR الخاص بالرعية مع مجتمعك.',
-    saintOfTheDay: 'قديس اليوم',
+    parentalPin: 'رمز أمان الوالدين',
+    screenTimeLimit: 'وقت الشاشة المحدد',
+    ttsEnabled: 'القارئ الصوتي',
   },
 };
 
@@ -190,30 +76,30 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeMode>(() => {
-    return (localStorage.getItem('oc_theme') as ThemeMode) || 'ancient';
+    return (localStorage.getItem('vkid_theme') as ThemeMode) || 'playful';
   });
 
   const [language, setLanguageState] = useState<Language>(() => {
-    return (localStorage.getItem('oc_lang') as Language) || 'en';
+    return (localStorage.getItem('vkid_lang') as Language) || 'en';
   });
 
   const setTheme = (mode: ThemeMode) => {
     setThemeState(mode);
-    localStorage.setItem('oc_theme', mode);
+    localStorage.setItem('vkid_theme', mode);
   };
 
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
-    localStorage.setItem('oc_lang', lang);
+    localStorage.setItem('vkid_lang', lang);
   };
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove('theme-dark', 'theme-light', 'theme-ancient', 'dark', 'light');
+    root.classList.remove('theme-dark', 'theme-light', 'theme-playful', 'dark', 'light');
     if (theme === 'dark') {
       root.classList.add('dark', 'theme-dark');
-    } else if (theme === 'ancient') {
-      root.classList.add('theme-ancient');
+    } else if (theme === 'playful') {
+      root.classList.add('theme-playful');
     } else {
       root.classList.add('light', 'theme-light');
     }
