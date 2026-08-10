@@ -20,6 +20,7 @@ import {
 import { soundFx } from '../utils/soundAndTTS';
 import { uploadFileToSupabase, fileToDataUrl } from '../lib/supabase';
 import { cleanFileNameToTitle, extractVideoFrameThumbnail, parseExternalVideoUrl } from '../utils/mediaUtils';
+import { isBunnyConfigured, uploadVideoToBunnyStream, saveBunnyVideoToSupabase } from '../services/bunnyUpload';
 
 import { SUPER_ADMIN_EMAIL } from './AdminModerationModal';
 
@@ -165,15 +166,27 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
 
       let detectedProvider: 'direct' | 'youtube' | 'vimeo' = 'direct';
 
-      // 1. Upload Media File to Supabase Storage or Process URL Stream
+      // 1. Upload Media File to Bunny Stream or Supabase Storage / URL Stream
+      let bunnyThumbnail: string | null = null;
       if (inputMode === 'file' && selectedMediaFile) {
-        setUploadStatusText(`Uploading ${selectedMediaFile.name} (${formatFileSize(selectedMediaFile.size)})...`);
-        finalMediaUrl = await uploadFileToSupabase(
-          selectedMediaFile,
-          'vkid-media',
-          mediaType === 'audiobook' ? 'audio' : 'videos',
-          (pct) => setUploadProgress(Math.floor(pct * 0.7))
-        );
+        if (isBunnyConfigured() && mediaType === 'video') {
+          setUploadStatusText(`Uploading ${selectedMediaFile.name} to Bunny Stream CDN...`);
+          const bunnyResult = await uploadVideoToBunnyStream(
+            selectedMediaFile,
+            formattedTitle,
+            (pct) => setUploadProgress(Math.floor(pct * 0.8))
+          );
+          finalMediaUrl = bunnyResult.videoUrl;
+          bunnyThumbnail = bunnyResult.thumbnailUrl;
+        } else {
+          setUploadStatusText(`Uploading ${selectedMediaFile.name} (${formatFileSize(selectedMediaFile.size)})...`);
+          finalMediaUrl = await uploadFileToSupabase(
+            selectedMediaFile,
+            'vkid-media',
+            mediaType === 'audiobook' ? 'audio' : 'videos',
+            (pct) => setUploadProgress(Math.floor(pct * 0.7))
+          );
+        }
       } else {
         const parsed = parseExternalVideoUrl(mediaUrlInput.trim());
         finalMediaUrl = parsed.embedUrl;
@@ -202,6 +215,8 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             finalThumbnailUrl = thumbnailPreviewUrl;
           }
         }
+      } else if (bunnyThumbnail) {
+        finalThumbnailUrl = bunnyThumbnail;
       } else if (thumbnailPreviewUrl && !thumbnailPreviewUrl.startsWith('blob:')) {
         finalThumbnailUrl = thumbnailPreviewUrl;
       } else if (thumbnailUrlInput.trim()) {
@@ -244,6 +259,12 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         createdAt: new Date().toISOString(),
         provider: detectedProvider,
       };
+
+      if (finalMediaUrl.includes('iframe.mediadelivery.net') || finalMediaUrl.includes('bunnycdn.com')) {
+        saveBunnyVideoToSupabase(newMedia).catch((err) =>
+          console.warn('Bunny video save warning:', err)
+        );
+      }
 
       setTimeout(() => {
         setIsUploading(false);

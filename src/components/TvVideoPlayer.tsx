@@ -24,7 +24,10 @@ function isExternalIframeUrl(urlStr: string): boolean {
     lower.includes('youtu.be') ||
     lower.includes('youtube-nocookie.com') ||
     lower.includes('vimeo.com') ||
-    lower.includes('player.vimeo.com')
+    lower.includes('player.vimeo.com') ||
+    lower.includes('iframe.mediadelivery.net') ||
+    lower.includes('bunnycdn.com') ||
+    lower.includes('mediadelivery.net')
   );
 }
 
@@ -85,6 +88,23 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
       <div className="w-full h-full min-h-[220px] bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center rounded-2xl">
         <Film className="w-12 h-12 text-slate-600 mb-2 animate-pulse" />
         <p className="text-sm font-bold text-slate-300">Video URL not specified</p>
+      </div>
+    );
+  }
+
+  // Bunny Stream Embed
+  if (mediaUrl.includes('iframe.mediadelivery.net') || mediaUrl.includes('bunnycdn.com') || mediaUrl.includes('mediadelivery.net')) {
+    return (
+      <div className={`relative bg-black rounded-2xl overflow-hidden group ${className}`}>
+        <iframe
+          key={key}
+          src={mediaUrl}
+          title={title}
+          loading="lazy"
+          className="w-full h-full rounded-2xl border-0"
+          allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+          allowFullScreen
+        />
       </div>
     );
   }
@@ -161,8 +181,8 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   }
 
   // 2. Native HTML5 <video> tag for directly uploaded video files (blob:, data:, http://, https://, .mp4, .webm, .mov, .m4v)
-  const handleNativeVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
-    console.error('HTML5 Video Error:', e);
+  const handleNativeVideoError = () => {
+    console.warn('HTML5 Video Error encountered for stream:', activeVideoUrl);
 
     const fallbackUrl =
       storageUrl && !storageUrl.startsWith('blob:')
