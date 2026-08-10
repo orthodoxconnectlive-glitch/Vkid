@@ -9,8 +9,21 @@ export const supabase: SupabaseClient | null =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 /**
+ * Helper to convert a File object into a persistent Base64 Data URL.
+ */
+export function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
  * Uploads a file directly to Supabase Storage bucket.
- * Falls back to local Object URL if Supabase keys are not configured.
+ * For Production Storage: Uploads raw File to storage and returns public HTTPS URL.
+ * For Local-Only / Mock Testing Mode (or if upload fails): Converts raw File to persistent Base64 Data URL so media survives page refreshes.
  */
 export async function uploadFileToSupabase(
   file: File,
@@ -33,10 +46,10 @@ export async function uploadFileToSupabase(
     if (onProgress) onProgress(80);
 
     if (error) {
-      console.warn('Supabase storage upload error, falling back to local object URL:', error.message);
-      const objectUrl = URL.createObjectURL(file);
+      console.warn('Supabase storage upload error, converting file to persistent Data URL:', error.message);
+      const dataUrl = await fileToDataUrl(file);
       if (onProgress) onProgress(100);
-      return objectUrl;
+      return dataUrl;
     }
 
     const { data: publicUrlData } = supabase.storage.from(bucketName).getPublicUrl(filePath);
@@ -46,11 +59,12 @@ export async function uploadFileToSupabase(
     // Simulated upload progress for local files when Supabase env vars are not set
     if (onProgress) {
       onProgress(25);
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, 100));
       onProgress(65);
-      await new Promise((r) => setTimeout(r, 150));
-      onProgress(100);
+      await new Promise((r) => setTimeout(r, 100));
     }
-    return URL.createObjectURL(file);
+    const dataUrl = await fileToDataUrl(file);
+    if (onProgress) onProgress(100);
+    return dataUrl;
   }
 }

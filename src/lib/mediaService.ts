@@ -5,26 +5,59 @@ import { supabase } from './supabase';
 const LOCAL_STORAGE_KEY = 'vkid_custom_media_items_v2';
 
 /**
+ * Sanitizes a MediaItem by ensuring any temporary or expired blob: URLs
+ * are replaced with persistent URLs or a reliable fallback video stream.
+ */
+export function sanitizeMediaItem(item: MediaItem): MediaItem {
+  let mediaUrl = item.mediaUrl;
+  let thumbnailUrl = item.thumbnailUrl;
+
+  if (!mediaUrl || mediaUrl.startsWith('blob:')) {
+    if (item.storageUrl && !item.storageUrl.startsWith('blob:')) {
+      mediaUrl = item.storageUrl;
+    } else if (item.publicUrl && !item.publicUrl.startsWith('blob:')) {
+      mediaUrl = item.publicUrl;
+    } else {
+      mediaUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+    }
+  }
+
+  if (!thumbnailUrl || thumbnailUrl.startsWith('blob:')) {
+    thumbnailUrl = 'https://images.unsplash.com/photo-1596464716127-f2a82984de30?auto=format&fit=crop&w=600&q=80';
+  }
+
+  return {
+    ...item,
+    title: item.title && item.title.trim() && item.title !== 'Untitled video' ? item.title : 'Kids Educational Video',
+    mediaUrl,
+    thumbnailUrl,
+  };
+}
+
+/**
  * Get initial media items synchronously from LocalStorage combined with default library
  */
 export function getInitialMediaItems(): MediaItem[] {
-  if (typeof window === 'undefined') return MEDIA_LIBRARY;
+  if (typeof window === 'undefined') return MEDIA_LIBRARY.map(sanitizeMediaItem);
   
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (saved) {
       const parsed: MediaItem[] = JSON.parse(saved);
-      // Merge unique items by ID
+      // Merge unique items by ID and sanitize any stale blob URLs
       const map = new Map<string, MediaItem>();
-      MEDIA_LIBRARY.forEach((item) => map.set(item.id, item));
-      parsed.forEach((item) => map.set(item.id, item));
-      return Array.from(map.values());
+      MEDIA_LIBRARY.forEach((item) => map.set(item.id, sanitizeMediaItem(item)));
+      parsed.forEach((item) => map.set(item.id, sanitizeMediaItem(item)));
+      const result = Array.from(map.values());
+      // Re-persist sanitized list so stale blob URLs are removed from localStorage
+      persistMediaItemsToLocal(result);
+      return result;
     }
   } catch (err) {
     console.warn('Failed to parse localStorage media items:', err);
   }
 
-  return MEDIA_LIBRARY;
+  return MEDIA_LIBRARY.map(sanitizeMediaItem);
 }
 
 /**
@@ -33,7 +66,8 @@ export function getInitialMediaItems(): MediaItem[] {
 export function persistMediaItemsToLocal(items: MediaItem[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+    const sanitized = items.map(sanitizeMediaItem);
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitized));
   } catch (err) {
     console.warn('Failed to save media items to localStorage:', err);
   }
@@ -53,8 +87,8 @@ export async function fetchLatestMediaItems(): Promise<MediaItem[]> {
       if (result.success && Array.isArray(result.data) && result.data.length > 0) {
         // Merge API results with local storage items
         const map = new Map<string, MediaItem>();
-        localItems.forEach((i) => map.set(i.id, i));
-        result.data.forEach((i: MediaItem) => map.set(i.id, i));
+        localItems.forEach((i) => map.set(i.id, sanitizeMediaItem(i)));
+        result.data.forEach((i: MediaItem) => map.set(i.id, sanitizeMediaItem(i)));
         const merged = Array.from(map.values());
         persistMediaItemsToLocal(merged);
         return merged;
@@ -73,7 +107,7 @@ export async function fetchLatestMediaItems(): Promise<MediaItem[]> {
         .order('created_at', { ascending: false });
 
       if (!error && data && data.length > 0) {
-        const mappedFromSupabase: MediaItem[] = data.map((row: any) => ({
+        const mappedFromSupabase: MediaItem[] = data.map((row: any) => sanitizeMediaItem({
           id: row.id,
           title: row.title,
           type: row.type || 'video',
@@ -92,8 +126,8 @@ export async function fetchLatestMediaItems(): Promise<MediaItem[]> {
         }));
 
         const map = new Map<string, MediaItem>();
-        localItems.forEach((i) => map.set(i.id, i));
-        mappedFromSupabase.forEach((i) => map.set(i.id, i));
+        localItems.forEach((i) => map.set(i.id, sanitizeMediaItem(i)));
+        mappedFromSupabase.forEach((i) => map.set(i.id, sanitizeMediaItem(i)));
         const merged = Array.from(map.values());
         persistMediaItemsToLocal(merged);
         return merged;
@@ -103,7 +137,7 @@ export async function fetchLatestMediaItems(): Promise<MediaItem[]> {
     }
   }
 
-  return localItems;
+  return localItems.map(sanitizeMediaItem);
 }
 
 /**

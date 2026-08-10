@@ -18,7 +18,7 @@ import {
   Check,
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
-import { uploadFileToSupabase } from '../lib/supabase';
+import { uploadFileToSupabase, fileToDataUrl } from '../lib/supabase';
 import { cleanFileNameToTitle, extractVideoFrameThumbnail, parseExternalVideoUrl } from '../utils/mediaUtils';
 
 import { SUPER_ADMIN_EMAIL } from './AdminModerationModal';
@@ -195,10 +195,14 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             (pct) => setUploadProgress(70 + Math.floor(pct * 0.3))
           );
         } catch (err) {
-          console.warn('Thumbnail storage upload fallback to preview URL:', err);
-          if (thumbnailPreviewUrl) finalThumbnailUrl = thumbnailPreviewUrl;
+          console.warn('Thumbnail storage upload fallback to persistent Data URL:', err);
+          if (selectedThumbnailFile) {
+            finalThumbnailUrl = await fileToDataUrl(selectedThumbnailFile);
+          } else if (thumbnailPreviewUrl && !thumbnailPreviewUrl.startsWith('blob:')) {
+            finalThumbnailUrl = thumbnailPreviewUrl;
+          }
         }
-      } else if (thumbnailPreviewUrl) {
+      } else if (thumbnailPreviewUrl && !thumbnailPreviewUrl.startsWith('blob:')) {
         finalThumbnailUrl = thumbnailPreviewUrl;
       } else if (thumbnailUrlInput.trim()) {
         finalThumbnailUrl = thumbnailUrlInput.trim();

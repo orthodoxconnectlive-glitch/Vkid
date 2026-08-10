@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { MediaItem } from '../types';
-import { X, ExternalLink, Sparkles, PlayCircle, Play, Headphones } from 'lucide-react';
+import { X, ExternalLink, Sparkles, PlayCircle, Play, Headphones, AlertCircle } from 'lucide-react';
 import { TvVideoPlayer } from './TvVideoPlayer';
 import { soundFx } from '../utils/soundAndTTS';
 import { parseExternalVideoUrl } from '../utils/mediaUtils';
@@ -18,6 +18,8 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   onSelectRelated,
   onClose,
 }) => {
+  const [audioError, setAudioError] = useState(false);
+
   if (!media) return null;
 
   const parsed = parseExternalVideoUrl(media.mediaUrl);
@@ -70,6 +72,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                 onOpenExternal={() => window.open(targetWatchUrl, '_blank')}
               />
             </div>
+          ) : audioError || (media.mediaUrl.startsWith('blob:') && audioError) ? (
+            <div className="py-8 text-center text-white space-y-3 bg-slate-900/95 rounded-2xl border-2 border-rose-500/30 p-6 max-w-md mx-auto">
+              <AlertCircle className="w-12 h-12 text-rose-400 mx-auto" />
+              <h4 className="font-extrabold text-base text-rose-300">Video Source Expired</h4>
+              <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                Video source expired. Please re-upload or select another video.
+              </p>
+            </div>
           ) : (
             <div className="py-8 text-center text-white space-y-6">
               <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg animate-pulse">
@@ -80,7 +90,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                 <p className="text-xs text-indigo-300 font-medium">{media.description}</p>
               </div>
               <div className="bg-slate-800/80 rounded-2xl p-4 max-w-md mx-auto border border-indigo-500/30">
-                <audio controls autoPlay src={media.mediaUrl} className="w-full" />
+                <audio controls autoPlay src={media.mediaUrl} className="w-full" onError={() => setAudioError(true)} />
               </div>
             </div>
           )}

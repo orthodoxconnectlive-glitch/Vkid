@@ -767,6 +767,8 @@ export const AdminModerationModal: React.FC<AdminModerationModalProps> = ({
                       mediaUrl={previewMedia.mediaUrl}
                       title={previewMedia.title}
                       posterUrl={previewMedia.thumbnailUrl}
+                      storageUrl={previewMedia.storageUrl}
+                      publicUrl={previewMedia.publicUrl}
                     />
                   </div>
                 ) : (

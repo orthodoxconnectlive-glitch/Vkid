@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, RefreshCw, Film, ExternalLink } from 'lucide-react';
+import { AlertTriangle, AlertCircle, RefreshCw, Film, ExternalLink } from 'lucide-react';
 import { parseExternalVideoUrl } from '../utils/mediaUtils';
 
 interface TvVideoPlayerProps {
@@ -28,6 +28,8 @@ function isExternalIframeUrl(urlStr: string): boolean {
   );
 }
 
+const DEFAULT_FALLBACK_VIDEO_URL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+
 export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   mediaUrl,
   title,
@@ -38,15 +40,45 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   onOpenExternal,
 }) => {
   const [hasError, setHasError] = useState(false);
+  const [isBlobExpired, setIsBlobExpired] = useState(false);
   const [key, setKey] = useState(0);
   const [activeVideoUrl, setActiveVideoUrl] = useState<string>(mediaUrl);
   const [fallbackAttempted, setFallbackAttempted] = useState(false);
 
   useEffect(() => {
-    setActiveVideoUrl(mediaUrl);
     setHasError(false);
+    setIsBlobExpired(false);
     setFallbackAttempted(false);
-  }, [mediaUrl]);
+
+    if (mediaUrl && mediaUrl.startsWith('blob:')) {
+      // Test if blob URL is still active in browser memory
+      fetch(mediaUrl)
+        .then((res) => {
+          if (!res.ok) {
+            const validFallback =
+              storageUrl && !storageUrl.startsWith('blob:')
+                ? storageUrl
+                : publicUrl && !publicUrl.startsWith('blob:')
+                ? publicUrl
+                : DEFAULT_FALLBACK_VIDEO_URL;
+            setActiveVideoUrl(validFallback);
+          } else {
+            setActiveVideoUrl(mediaUrl);
+          }
+        })
+        .catch(() => {
+          const validFallback =
+            storageUrl && !storageUrl.startsWith('blob:')
+              ? storageUrl
+              : publicUrl && !publicUrl.startsWith('blob:')
+              ? publicUrl
+              : DEFAULT_FALLBACK_VIDEO_URL;
+          setActiveVideoUrl(validFallback);
+        });
+    } else {
+      setActiveVideoUrl(mediaUrl);
+    }
+  }, [mediaUrl, storageUrl, publicUrl]);
 
   if (!mediaUrl) {
     return (
@@ -132,56 +164,76 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   const handleNativeVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
     console.error('HTML5 Video Error:', e);
 
-    // Fallback protection: If blob URL expired or failed and a persistent storage/public URL exists, attempt fallback
-    const fallbackUrl = storageUrl || publicUrl;
-    if (!fallbackAttempted && fallbackUrl && fallbackUrl !== activeVideoUrl) {
-      console.warn('Attempting playback fallback to persistent storage URL:', fallbackUrl);
+    const fallbackUrl =
+      storageUrl && !storageUrl.startsWith('blob:')
+        ? storageUrl
+        : publicUrl && !publicUrl.startsWith('blob:')
+        ? publicUrl
+        : DEFAULT_FALLBACK_VIDEO_URL;
+
+    if (!fallbackAttempted && fallbackUrl !== activeVideoUrl) {
+      console.warn('Attempting playback fallback to working stream:', fallbackUrl);
       setFallbackAttempted(true);
       setActiveVideoUrl(fallbackUrl);
+      setHasError(false);
+      setIsBlobExpired(false);
       setKey((prev) => prev + 1);
       return;
     }
 
+    if (activeVideoUrl.startsWith('blob:') || mediaUrl.startsWith('blob:')) {
+      setIsBlobExpired(true);
+    }
     setHasError(true);
   };
 
   return (
     <div className={`relative bg-black rounded-2xl overflow-hidden flex items-center justify-center ${className}`}>
       {hasError ? (
-        <div className="p-6 text-center text-white space-y-3 bg-slate-900/90 w-full h-full flex flex-col items-center justify-center">
-          <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
-          <h4 className="font-extrabold text-sm sm:text-base">Video Playback Notice</h4>
-          <p className="text-xs text-slate-300 max-w-md font-medium leading-relaxed">
-            Your browser or device experienced a loading error with this video stream.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-            <button
-              onClick={() => {
-                setHasError(false);
-                setFallbackAttempted(false);
-                setActiveVideoUrl(mediaUrl);
-                setKey((prev) => prev + 1);
-              }}
-              className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs rounded-xl shadow transition-all flex items-center gap-2 cursor-pointer focus:ring-4 focus:ring-white"
-            >
-              <RefreshCw className="w-4 h-4" />
-              <span>Retry Stream</span>
-            </button>
-            <button
-              onClick={() => {
-                if (onOpenExternal) {
-                  onOpenExternal();
-                } else {
-                  window.open(activeVideoUrl || mediaUrl, '_blank', 'noopener,noreferrer');
-                }
-              }}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl border border-slate-600 shadow transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span>Open Direct Link</span>
-            </button>
+        isBlobExpired || activeVideoUrl.startsWith('blob:') ? (
+          <div className="p-6 text-center text-white space-y-3 bg-slate-900/95 w-full h-full flex flex-col items-center justify-center rounded-2xl border-2 border-rose-500/30 min-h-[220px]">
+            <AlertCircle className="w-12 h-12 text-rose-400 mx-auto" />
+            <h4 className="font-extrabold text-sm sm:text-base text-rose-300">Video Source Expired</h4>
+            <p className="text-xs text-slate-300 max-w-md font-medium leading-relaxed">
+              Video source expired. Please re-upload or select another video.
+            </p>
           </div>
-        </div>
+        ) : (
+          <div className="p-6 text-center text-white space-y-3 bg-slate-900/90 w-full h-full flex flex-col items-center justify-center">
+            <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
+            <h4 className="font-extrabold text-sm sm:text-base">Video Playback Notice</h4>
+            <p className="text-xs text-slate-300 max-w-md font-medium leading-relaxed">
+              Your browser or device experienced a loading error with this video stream.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              <button
+                onClick={() => {
+                  setHasError(false);
+                  setFallbackAttempted(false);
+                  setActiveVideoUrl(mediaUrl);
+                  setKey((prev) => prev + 1);
+                }}
+                className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs rounded-xl shadow transition-all flex items-center gap-2 cursor-pointer focus:ring-4 focus:ring-white"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Retry Stream</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (onOpenExternal) {
+                    onOpenExternal();
+                  } else {
+                    window.open(activeVideoUrl || mediaUrl, '_blank', 'noopener,noreferrer');
+                  }
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl border border-slate-600 shadow transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open Direct Link</span>
+              </button>
+            </div>
+          </div>
+        )
       ) : (
         <video
           key={key}
