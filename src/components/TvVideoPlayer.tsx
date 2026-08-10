@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertTriangle, RefreshCw, Film, ExternalLink } from 'lucide-react';
 import { parseExternalVideoUrl } from '../utils/mediaUtils';
 
@@ -6,19 +6,47 @@ interface TvVideoPlayerProps {
   mediaUrl: string;
   title: string;
   posterUrl?: string;
+  storageUrl?: string;
+  publicUrl?: string;
   className?: string;
   onOpenExternal?: () => void;
+}
+
+/**
+ * Checks if a given video URL is an external embed (YouTube / Vimeo)
+ * as opposed to a directly uploaded or hosted video file (.mp4, .webm, blob:, data:, etc.)
+ */
+function isExternalIframeUrl(urlStr: string): boolean {
+  if (!urlStr) return false;
+  const lower = urlStr.toLowerCase().trim();
+  return (
+    lower.includes('youtube.com') ||
+    lower.includes('youtu.be') ||
+    lower.includes('youtube-nocookie.com') ||
+    lower.includes('vimeo.com') ||
+    lower.includes('player.vimeo.com')
+  );
 }
 
 export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   mediaUrl,
   title,
   posterUrl,
+  storageUrl,
+  publicUrl,
   className = 'w-full h-full',
   onOpenExternal,
 }) => {
   const [hasError, setHasError] = useState(false);
   const [key, setKey] = useState(0);
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string>(mediaUrl);
+  const [fallbackAttempted, setFallbackAttempted] = useState(false);
+
+  useEffect(() => {
+    setActiveVideoUrl(mediaUrl);
+    setHasError(false);
+    setFallbackAttempted(false);
+  }, [mediaUrl]);
 
   if (!mediaUrl) {
     return (
@@ -29,19 +57,11 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     );
   }
 
-  const parsed = parseExternalVideoUrl(mediaUrl);
+  const isEmbed = isExternalIframeUrl(mediaUrl);
 
-  // Check if mediaUrl is an embed iframe link or YouTube/Vimeo external link
-  const isEmbed =
-    parsed.provider === 'youtube' ||
-    parsed.provider === 'vimeo' ||
-    mediaUrl.includes('youtube.com/embed/') ||
-    mediaUrl.includes('youtube-nocookie.com/embed/') ||
-    mediaUrl.includes('vimeo.com/video/') ||
-    mediaUrl.includes('mediadelivery.net/embed/') ||
-    mediaUrl.includes('player.vimeo.com');
-
+  // 1. YouTube / Vimeo External Iframe Embed
   if (isEmbed) {
+    const parsed = parseExternalVideoUrl(mediaUrl);
     let finalEmbedUrl = parsed.embedUrl || mediaUrl;
 
     // Convert standard youtube.com/embed to youtube-nocookie.com/embed
@@ -68,7 +88,9 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
       }
     }
 
-    const watchLink = parsed.externalWatchUrl || (parsed.videoId ? `https://www.youtube.com/watch?v=${parsed.videoId}` : mediaUrl);
+    const watchLink =
+      parsed.externalWatchUrl ||
+      (parsed.videoId ? `https://www.youtube.com/watch?v=${parsed.videoId}` : mediaUrl);
 
     return (
       <div className={`relative bg-black rounded-2xl overflow-hidden group ${className}`}>
@@ -84,9 +106,9 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           className="w-full h-full border-0 rounded-2xl"
         />
 
-        {/* Quick External Fallback Overlay Bar */}
+        {/* External Watch Fallback Button */}
         <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 flex items-center gap-2 z-10 shadow-lg">
-          <span className="text-[10px] font-extrabold text-slate-300">Having playback issues?</span>
+          <span className="text-[10px] font-extrabold text-slate-300">Playback issue?</span>
           <button
             type="button"
             onClick={() => {
@@ -106,7 +128,23 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     );
   }
 
-  // Native HTML5 <video> player with full custom controls for direct video streams/uploads (MP4, WebM, Supabase)
+  // 2. Native HTML5 <video> tag for directly uploaded video files (blob:, data:, http://, https://, .mp4, .webm, .mov, .m4v)
+  const handleNativeVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    console.error('HTML5 Video Error:', e);
+
+    // Fallback protection: If blob URL expired or failed and a persistent storage/public URL exists, attempt fallback
+    const fallbackUrl = storageUrl || publicUrl;
+    if (!fallbackAttempted && fallbackUrl && fallbackUrl !== activeVideoUrl) {
+      console.warn('Attempting playback fallback to persistent storage URL:', fallbackUrl);
+      setFallbackAttempted(true);
+      setActiveVideoUrl(fallbackUrl);
+      setKey((prev) => prev + 1);
+      return;
+    }
+
+    setHasError(true);
+  };
+
   return (
     <div className={`relative bg-black rounded-2xl overflow-hidden flex items-center justify-center ${className}`}>
       {hasError ? (
@@ -114,12 +152,14 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
           <h4 className="font-extrabold text-sm sm:text-base">Video Playback Notice</h4>
           <p className="text-xs text-slate-300 max-w-md font-medium leading-relaxed">
-            Your Smart TV or web browser experienced a loading delay with this video stream.
+            Your browser or device experienced a loading error with this video stream.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
             <button
               onClick={() => {
                 setHasError(false);
+                setFallbackAttempted(false);
+                setActiveVideoUrl(mediaUrl);
                 setKey((prev) => prev + 1);
               }}
               className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs rounded-xl shadow transition-all flex items-center gap-2 cursor-pointer focus:ring-4 focus:ring-white"
@@ -132,7 +172,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
                 if (onOpenExternal) {
                   onOpenExternal();
                 } else {
-                  window.open(mediaUrl, '_blank', 'noopener,noreferrer');
+                  window.open(activeVideoUrl || mediaUrl, '_blank', 'noopener,noreferrer');
                 }
               }}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl border border-slate-600 shadow transition-all flex items-center gap-1.5 cursor-pointer"
@@ -145,24 +185,18 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
       ) : (
         <video
           key={key}
+          src={activeVideoUrl}
           controls
           autoPlay
           playsInline
           // @ts-ignore
           webkit-playsinline="true"
-          preload="metadata"
+          controlsList="nodownload"
           poster={posterUrl}
-          onError={() => setHasError(true)}
-          className="w-full h-full object-contain rounded-2xl focus:outline-none focus:ring-4 focus:ring-amber-400"
+          className="w-full h-full object-contain rounded-xl focus:outline-none focus:ring-4 focus:ring-amber-400"
+          onError={handleNativeVideoError}
         >
-          {/* Specific MIME types for Smart TV H.264/AAC compatibility */}
-          <source src={mediaUrl} type="video/mp4; codecs='avc1.42E01E, mp4a.40.2'" />
-          <source src={mediaUrl} type="video/mp4" />
-          <source src={mediaUrl} type="video/webm" />
-          <source src={mediaUrl} />
-          <div className="p-6 text-center text-white">
-            <p className="text-xs font-bold">Your browser does not support HTML5 video tag.</p>
-          </div>
+          Your browser does not support the video tag.
         </video>
       )}
     </div>

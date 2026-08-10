@@ -35,6 +35,8 @@ export interface MediaItem {
   uploadedBy?: string;
   createdAt?: string;
   provider?: 'direct' | 'youtube' | 'vimeo';
+  storageUrl?: string;
+  publicUrl?: string;
 }
 
 export type UserRole = 'super_admin' | 'admin' | 'educator' | 'parent';

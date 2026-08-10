@@ -4,6 +4,7 @@ import { Play, Headphones, Music, Star, Search, X, Volume2, Sparkles, Heart, Tra
 import { soundFx, speakText } from '../utils/soundAndTTS';
 import { getTranslation } from '../data/translations';
 import { TvVideoPlayer } from './TvVideoPlayer';
+import { VideoPlayerModal } from './VideoPlayerModal';
 import { useTvNavigation } from '../hooks/useTvNavigation';
 import { parseExternalVideoUrl } from '../utils/mediaUtils';
 
@@ -400,166 +401,12 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
 
       {/* Media Player Modal Overlay */}
       {activeMedia && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200 overflow-y-auto">
-          <div className="bg-white rounded-3xl overflow-hidden max-w-3xl w-full border-4 border-amber-300 shadow-2xl relative my-auto max-h-[92vh] flex flex-col">
-            {/* Modal Top Bar */}
-            <div className="p-3.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 text-slate-900 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2 min-w-0 pr-2">
-                <Sparkles className="w-5 h-5 text-amber-950 shrink-0" />
-                <h3 className="font-black text-sm sm:text-base truncate">{activeMedia.title}</h3>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {/* External Watch Link Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const parsed = parseExternalVideoUrl(activeMedia.mediaUrl);
-                    const targetUrl = parsed.externalWatchUrl || activeMedia.mediaUrl;
-                    window.open(targetUrl, '_blank', 'noopener,noreferrer');
-                  }}
-                  className="hidden sm:flex items-center gap-1.5 bg-white/30 hover:bg-white/50 text-slate-900 font-extrabold text-xs px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm border border-black/10"
-                  title="Open video directly in new tab if embed is blocked"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Watch on External Link</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    soundFx.playPop();
-                    setActiveMedia(null);
-                  }}
-                  className="p-1.5 rounded-full bg-white/20 hover:bg-white/40 text-slate-900 transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Media Player Body */}
-            <div className="p-3 sm:p-5 bg-slate-950 overflow-y-auto flex-1 space-y-4">
-              {activeMedia.type === 'video' || activeMedia.type === 'rhyme' ? (
-                <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-2xl">
-                  <TvVideoPlayer
-                    mediaUrl={activeMedia.mediaUrl}
-                    title={activeMedia.title}
-                    posterUrl={activeMedia.thumbnailUrl}
-                    onOpenExternal={() => {
-                      const parsed = parseExternalVideoUrl(activeMedia.mediaUrl);
-                      window.open(parsed.externalWatchUrl || activeMedia.mediaUrl, '_blank');
-                    }}
-                  />
-                </div>
-              ) : (
-                /* Audiobook Player Interface */
-                <div className="py-8 text-center text-white space-y-6">
-                  <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg animate-pulse">
-                    <Headphones className="w-12 h-12 text-white" />
-                  </div>
-                  <div>
-                    <h4 className="text-xl font-black mb-1">{activeMedia.title}</h4>
-                    <p className="text-xs text-indigo-300 font-medium">{activeMedia.description}</p>
-                  </div>
-
-                  {/* Audio Controls Simulation */}
-                  <div className="bg-slate-800/80 rounded-2xl p-4 max-w-md mx-auto border border-indigo-500/30">
-                    <audio controls autoPlay src={activeMedia.mediaUrl} className="w-full" />
-                  </div>
-                </div>
-              )}
-
-              {/* Related Educational Videos List */}
-              <div className="pt-2">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                    <PlayCircle className="w-4 h-4 text-amber-400" />
-                    <span>Next Safe Videos for Kids</span>
-                  </h4>
-                  <span className="text-[10px] text-slate-400 font-bold">Tap to play next</span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {mediaList
-                    .filter((m) => m.id !== activeMedia.id)
-                    .slice(0, 4)
-                    .map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => handleMediaClick(item)}
-                        className="bg-slate-900 border border-slate-800 hover:border-amber-400 p-2 rounded-xl text-left transition-all group flex flex-col justify-between cursor-pointer"
-                      >
-                        <div className="relative aspect-video w-full rounded-lg overflow-hidden bg-slate-950 mb-1.5">
-                          <img
-                            src={item.thumbnailUrl}
-                            alt={item.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Play className="w-5 h-5 text-amber-400 fill-current" />
-                          </div>
-                          <span className="absolute bottom-1 right-1 bg-black/80 text-[9px] text-white px-1 rounded font-bold">
-                            {item.duration}
-                          </span>
-                        </div>
-                        <h5 className="text-[11px] font-bold text-white leading-tight line-clamp-1 group-hover:text-amber-300">
-                          {item.title}
-                        </h5>
-                        <p className="text-[9px] text-slate-400 font-medium truncate mt-0.5">{item.category}</p>
-                      </button>
-                    ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Bottom Footer */}
-            <div className="p-3.5 bg-amber-50 border-t border-amber-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-amber-900">
-                  Safe Kid Streaming • Ages {activeMedia.targetAgeGroup.join(', ')}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {/* External Watch Fallback Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const parsed = parseExternalVideoUrl(activeMedia.mediaUrl);
-                    window.open(parsed.externalWatchUrl || activeMedia.mediaUrl, '_blank', 'noopener,noreferrer');
-                  }}
-                  className="flex items-center gap-1 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-extrabold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-rose-600" />
-                  <span>Open in External Link</span>
-                </button>
-
-                {/* Next Video Button */}
-                <button
-                  type="button"
-                  onClick={handlePlayNext}
-                  className="flex items-center gap-1 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-500 hover:to-orange-500 text-slate-900 font-extrabold text-xs px-3.5 py-2 rounded-xl shadow transition-all cursor-pointer active:scale-95"
-                >
-                  <span>Next Video</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundFx.playPop();
-                    setActiveMedia(null);
-                  }}
-                  className="bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition-all cursor-pointer"
-                >
-                  Done Watching
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <VideoPlayerModal
+          media={activeMedia}
+          relatedMedia={mediaList.filter((m) => m.id !== activeMedia.id).slice(0, 4)}
+          onSelectRelated={(item) => handleMediaClick(item)}
+          onClose={() => setActiveMedia(null)}
+        />
       )}
       {/* Admin Delete Video Confirmation Modal */}
       {deletingItem && (
