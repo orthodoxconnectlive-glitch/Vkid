@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Play, RefreshCw, Film } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Film } from 'lucide-react';
 
 interface TvVideoPlayerProps {
   mediaUrl: string;
@@ -26,25 +26,65 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     );
   }
 
-  // Check if mediaUrl is an embed iframe link or direct HTML5 video stream
-  const isEmbedUrl =
-    mediaUrl.includes('youtube.com/embed/') ||
-    mediaUrl.includes('vimeo.com/video/') ||
-    mediaUrl.includes('mediadelivery.net/embed/') ||
-    mediaUrl.includes('player.vimeo.com');
+  // Convert raw Bunny Stream URLs or Video GUIDs to official iframe embed format
+  const getNormalizedUrl = (url: string): { isEmbed: boolean; formattedUrl: string } => {
+    if (!url) return { isEmbed: false, formattedUrl: '' };
 
-  if (isEmbedUrl) {
-    // Append playsinline parameter if YouTube
-    let finalEmbedUrl = mediaUrl;
-    if (mediaUrl.includes('youtube.com') && !mediaUrl.includes('playsinline=')) {
-      finalEmbedUrl += mediaUrl.includes('?') ? '&playsinline=1' : '?playsinline=1';
+    // 1. YouTube & Vimeo
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      let finalUrl = url;
+      if (url.includes('watch?v=')) {
+        const videoId = url.split('v=')[1]?.split('&')[0];
+        finalUrl = `https://www.youtube.com/embed/${videoId}`;
+      } else if (url.includes('youtu.be/')) {
+        const videoId = url.split('youtu.be/')[1]?.split('?')[0];
+        finalUrl = `https://www.youtube.com/embed/${videoId}`;
+      }
+      if (!finalUrl.includes('playsinline=')) {
+        finalUrl += finalUrl.includes('?') ? '&playsinline=1' : '?playsinline=1';
+      }
+      return { isEmbed: true, formattedUrl: finalUrl };
     }
 
+    if (url.includes('vimeo.com')) {
+      return { isEmbed: true, formattedUrl: url };
+    }
+
+    // 2. Bunny Stream (iframe embed, mediadelivery.net, or bunnycdn.com)
+    if (
+      url.includes('mediadelivery.net') ||
+      url.includes('bunnycdn.com') ||
+      url.includes('bunny.net') ||
+      url.includes('/embed/')
+    ) {
+      // If it's already an embed iframe URL, append autoplay/preload
+      if (url.includes('/embed/')) {
+        return { isEmbed: true, formattedUrl: url };
+      }
+
+      // Extract Bunny Video GUID (e.g. c3483883-78dc-48e8-b2af-5848ced3d5ea)
+      const libraryId = import.meta.env.VITE_BUNNY_LIBRARY_ID || '723727';
+      const guidMatch = url.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+
+      if (guidMatch && guidMatch[0]) {
+        const embedUrl = `https://iframe.mediadelivery.net/embed/${libraryId}/${guidMatch[0]}?autoplay=true&loop=false&muted=false&preload=true`;
+        return { isEmbed: true, formattedUrl: embedUrl };
+      }
+    }
+
+    // 3. Fallback for direct MP4 / WebM files
+    return { isEmbed: false, formattedUrl: url };
+  };
+
+  const { isEmbed, formattedUrl } = getNormalizedUrl(mediaUrl);
+
+  // Render iFrame Player for Bunny Stream, YouTube, Vimeo
+  if (isEmbed) {
     return (
       <div className={`relative bg-black rounded-2xl overflow-hidden ${className}`}>
         <iframe
           key={key}
-          src={finalEmbedUrl}
+          src={formattedUrl}
           title={title}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
@@ -57,7 +97,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     );
   }
 
-  // Native HTML5 <video> player for direct video streams/uploads (MP4, WebM, Supabase, Cloudinary)
+  // Native HTML5 <video> player fallback for direct MP4 file streams
   return (
     <div className={`relative bg-black rounded-2xl overflow-hidden flex items-center justify-center ${className}`}>
       {hasError ? (
@@ -65,7 +105,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
           <h4 className="font-extrabold text-sm sm:text-base">Video Playback Notice</h4>
           <p className="text-xs text-slate-300 max-w-md font-medium leading-relaxed">
-            Your Smart TV browser codec experienced a loading delay or format compatibility issue with this video stream.
+            Unable to stream this video file directly.
           </p>
           <button
             onClick={() => {
@@ -91,13 +131,11 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           onError={() => setHasError(true)}
           className="w-full h-full object-contain rounded-2xl focus:outline-none focus:ring-4 focus:ring-amber-400"
         >
-          {/* Specific MIME types for Smart TV H.264/AAC compatibility */}
-          <source src={mediaUrl} type="video/mp4; codecs='avc1.42E01E, mp4a.40.2'" />
-          <source src={mediaUrl} type="video/mp4" />
-          <source src={mediaUrl} type="video/webm" />
-          <source src={mediaUrl} />
+          <source src={formattedUrl} type="video/mp4" />
+          <source src={formattedUrl} type="video/webm" />
+          <source src={formattedUrl} />
           <div className="p-6 text-center text-white">
-            <p className="text-xs font-bold">Your Smart TV browser does not support HTML5 video tag.</p>
+            <p className="text-xs font-bold">Your browser does not support HTML5 video playback.</p>
           </div>
         </video>
       )}
