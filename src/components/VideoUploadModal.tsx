@@ -197,8 +197,10 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         }
       }
 
-      // 2. Upload Thumbnail File to Supabase Storage (if selected or auto-extracted)
-      if (selectedThumbnailFile) {
+      // 2. Obtain Thumbnail URL (Rely 100% on Bunny CDN for Bunny Stream videos)
+      if (bunnyThumbnail) {
+        finalThumbnailUrl = bunnyThumbnail;
+      } else if (selectedThumbnailFile) {
         setUploadStatusText('Uploading cover image thumbnail...');
         try {
           finalThumbnailUrl = await uploadFileToSupabase(
@@ -215,8 +217,6 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             finalThumbnailUrl = thumbnailPreviewUrl;
           }
         }
-      } else if (bunnyThumbnail) {
-        finalThumbnailUrl = bunnyThumbnail;
       } else if (thumbnailPreviewUrl && !thumbnailPreviewUrl.startsWith('blob:')) {
         finalThumbnailUrl = thumbnailPreviewUrl;
       } else if (thumbnailUrlInput.trim()) {

@@ -169,22 +169,38 @@ export async function saveMediaItemToStorage(newItem: MediaItem): Promise<MediaI
   // 3. Post to Supabase DB if client exists
   if (supabase) {
     try {
-      await supabase.from('media_items').insert([
-        {
+      const fullRecord: Record<string, any> = {
+        id: itemToSave.id,
+        title: itemToSave.title,
+        type: itemToSave.type,
+        category: itemToSave.category,
+        duration: itemToSave.duration,
+        thumbnail_url: itemToSave.thumbnailUrl,
+        media_url: itemToSave.mediaUrl,
+        url: itemToSave.mediaUrl,
+        target_age_group: itemToSave.targetAgeGroup,
+        description: itemToSave.description,
+        status: itemToSave.status,
+        uploaded_by: itemToSave.uploadedBy,
+        created_at: itemToSave.createdAt,
+      };
+
+      const { error } = await supabase.from('media_items').insert([fullRecord]);
+
+      if (error) {
+        console.warn('Supabase DB insert primary warning, trying minimal fallback record:', error.message);
+        const minimalRecord = {
           id: itemToSave.id,
           title: itemToSave.title,
-          type: itemToSave.type,
-          category: itemToSave.category,
-          duration: itemToSave.duration,
-          thumbnail_url: itemToSave.thumbnailUrl,
-          media_url: itemToSave.mediaUrl,
-          target_age_group: itemToSave.targetAgeGroup,
           description: itemToSave.description,
+          media_url: itemToSave.mediaUrl,
+          url: itemToSave.mediaUrl,
+          thumbnail_url: itemToSave.thumbnailUrl,
+          duration: itemToSave.duration,
           status: itemToSave.status,
-          uploaded_by: itemToSave.uploadedBy,
-          created_at: itemToSave.createdAt,
-        },
-      ]);
+        };
+        await supabase.from('media_items').insert([minimalRecord]);
+      }
     } catch (err) {
       console.warn('Supabase DB insert error:', err);
     }

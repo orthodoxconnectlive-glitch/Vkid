@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { AlertTriangle, AlertCircle, RefreshCw, Film, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { AlertTriangle, AlertCircle, RefreshCw, Film, ExternalLink, Play } from 'lucide-react';
 import { parseExternalVideoUrl } from '../utils/mediaUtils';
 
 interface TvVideoPlayerProps {
@@ -13,7 +13,7 @@ interface TvVideoPlayerProps {
 }
 
 /**
- * Checks if a given video URL is an external embed (YouTube / Vimeo)
+ * Checks if a given video URL is an external embed (YouTube / Vimeo / Bunny Stream)
  * as opposed to a directly uploaded or hosted video file (.mp4, .webm, blob:, data:, etc.)
  */
 function isExternalIframeUrl(urlStr: string): boolean {
@@ -47,11 +47,14 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   const [key, setKey] = useState(0);
   const [activeVideoUrl, setActiveVideoUrl] = useState<string>(mediaUrl);
   const [fallbackAttempted, setFallbackAttempted] = useState(false);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     setHasError(false);
     setIsBlobExpired(false);
     setFallbackAttempted(false);
+    setAutoplayBlocked(false);
 
     if (mediaUrl && mediaUrl.startsWith('blob:')) {
       // Test if blob URL is still active in browser memory
@@ -83,6 +86,35 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     }
   }, [mediaUrl, storageUrl, publicUrl]);
 
+  // Handle video element play attempt safely on Smart TVs (prevent uncaught NotAllowedError on autoplay restrictions)
+  useEffect(() => {
+    if (videoRef.current && activeVideoUrl && !isExternalIframeUrl(activeVideoUrl)) {
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setAutoplayBlocked(false);
+          })
+          .catch((err) => {
+            // Autoplay was prevented by browser policy (common on Smart TVs without prior user interaction)
+            if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
+              setAutoplayBlocked(true);
+            }
+          });
+      }
+    }
+  }, [activeVideoUrl, key]);
+
+  const handleManualPlay = () => {
+    if (videoRef.current) {
+      videoRef.current.play().then(() => {
+        setAutoplayBlocked(false);
+      }).catch((e) => {
+        console.warn('Manual playback trigger notice:', e);
+      });
+    }
+  };
+
   if (!mediaUrl) {
     return (
       <div className="w-full h-full min-h-[220px] bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center rounded-2xl">
@@ -95,13 +127,13 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   // Bunny Stream Embed
   if (mediaUrl.includes('iframe.mediadelivery.net') || mediaUrl.includes('bunnycdn.com') || mediaUrl.includes('mediadelivery.net')) {
     return (
-      <div className={`relative bg-black rounded-2xl overflow-hidden group ${className}`}>
+      <div className={`relative bg-black rounded-2xl overflow-hidden group w-full h-full min-h-[220px] aspect-video flex items-center justify-center ${className}`}>
         <iframe
           key={key}
           src={mediaUrl}
           title={title}
           loading="lazy"
-          className="w-full h-full rounded-2xl border-0"
+          className="w-full h-full rounded-2xl border-0 aspect-video object-cover"
           allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
           allowFullScreen
         />
@@ -163,6 +195,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           <span className="text-[10px] font-extrabold text-slate-300">Playback issue?</span>
           <button
             type="button"
+            tabIndex={0}
             onClick={() => {
               if (onOpenExternal) {
                 onOpenExternal();
@@ -170,7 +203,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
                 window.open(watchLink, '_blank', 'noopener,noreferrer');
               }
             }}
-            className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-extrabold px-2.5 py-1 rounded-lg transition-all cursor-pointer shadow"
+            className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-extrabold px-2.5 py-1 rounded-lg transition-all cursor-pointer shadow focus:outline-none focus:ring-2 focus:ring-white"
           >
             <ExternalLink className="w-3 h-3" />
             <span>Open in YouTube</span>
@@ -227,18 +260,22 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
               <button
+                type="button"
+                tabIndex={0}
                 onClick={() => {
                   setHasError(false);
                   setFallbackAttempted(false);
                   setActiveVideoUrl(mediaUrl);
                   setKey((prev) => prev + 1);
                 }}
-                className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs rounded-xl shadow transition-all flex items-center gap-2 cursor-pointer focus:ring-4 focus:ring-white"
+                className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-900 font-extrabold text-xs rounded-xl shadow transition-all flex items-center gap-2 cursor-pointer focus:outline-none focus:ring-4 focus:ring-white"
               >
                 <RefreshCw className="w-4 h-4" />
                 <span>Retry Stream</span>
               </button>
               <button
+                type="button"
+                tabIndex={0}
                 onClick={() => {
                   if (onOpenExternal) {
                     onOpenExternal();
@@ -246,7 +283,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
                     window.open(activeVideoUrl || mediaUrl, '_blank', 'noopener,noreferrer');
                   }
                 }}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl border border-slate-600 shadow transition-all flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-xs rounded-xl border border-slate-600 shadow transition-all flex items-center gap-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>Open Direct Link</span>
@@ -255,21 +292,50 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           </div>
         )
       ) : (
-        <video
-          key={key}
-          src={activeVideoUrl}
-          controls
-          autoPlay
-          playsInline
-          // @ts-ignore
-          webkit-playsinline="true"
-          controlsList="nodownload"
-          poster={posterUrl}
-          className="w-full h-full object-contain rounded-xl focus:outline-none focus:ring-4 focus:ring-amber-400"
-          onError={handleNativeVideoError}
-        >
-          Your browser does not support the video tag.
-        </video>
+        <>
+          <video
+            ref={videoRef}
+            key={key}
+            src={activeVideoUrl}
+            controls
+            autoPlay
+            playsInline
+            // @ts-ignore
+            webkit-playsinline="true"
+            controlsList="nodownload"
+            poster={posterUrl}
+            tabIndex={0}
+            className="w-full h-full object-contain rounded-xl focus:outline-none focus:ring-4 focus:ring-amber-400"
+            onError={handleNativeVideoError}
+          >
+            <source src={activeVideoUrl} type="video/mp4" />
+            <source src={activeVideoUrl} type="video/webm" />
+            Your browser does not support standard HTML5 video playback.
+          </video>
+
+          {/* Autoplay blocked overlay for TV remote or browser policy */}
+          {autoplayBlocked && (
+            <div
+              tabIndex={0}
+              role="button"
+              onClick={handleManualPlay}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.keyCode === 13 || e.key === ' ') {
+                  e.preventDefault();
+                  handleManualPlay();
+                }
+              }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center z-20 cursor-pointer focus:outline-none focus:ring-4 focus:ring-amber-400 rounded-xl group"
+            >
+              <div className="w-16 h-16 rounded-full bg-amber-400 text-slate-900 flex items-center justify-center shadow-2xl group-hover:scale-110 group-focus:scale-110 transition-transform mb-2">
+                <Play className="w-8 h-8 fill-current ml-1" />
+              </div>
+              <span className="text-white font-extrabold text-xs bg-slate-900/80 px-3 py-1.5 rounded-full border border-white/20">
+                Press OK / Enter to Play
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

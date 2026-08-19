@@ -97,6 +97,7 @@ export async function uploadVideoToBunnyStream(
 
 /**
  * Saves Bunny Stream video entry into Supabase database table if configured.
+ * Safely handles database column mappings and schema variations.
  */
 export async function saveBunnyVideoToSupabase(mediaItem: Partial<MediaItem>): Promise<any> {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -105,29 +106,55 @@ export async function saveBunnyVideoToSupabase(mediaItem: Partial<MediaItem>): P
     return null;
   }
 
+  const libraryId = import.meta.env.VITE_BUNNY_LIBRARY_ID || '';
+
+  const primaryRecord: Record<string, any> = {
+    id: mediaItem.id || `bunny_${Date.now()}`,
+    title: mediaItem.title || 'Untitled Video',
+    description: mediaItem.description || '',
+    media_url: mediaItem.mediaUrl,
+    url: mediaItem.mediaUrl || `https://iframe.mediadelivery.net/embed/${libraryId}/${mediaItem.id}?autoplay=true`,
+    thumbnail_url: mediaItem.thumbnailUrl,
+    type: mediaItem.type || 'video',
+    duration: mediaItem.duration || '0:00',
+    status: mediaItem.status || 'approved',
+    provider: 'direct',
+    created_at: new Date().toISOString(),
+  };
+
+  if (mediaItem.category) {
+    primaryRecord.category = mediaItem.category;
+  }
+  if (mediaItem.targetAgeGroup) {
+    primaryRecord.target_age_group = mediaItem.targetAgeGroup;
+  }
+
   try {
-    const { data, error } = await supabase
-      .from('media_items')
-      .insert([
-        {
-          id: mediaItem.id || `bunny_${Date.now()}`,
-          title: mediaItem.title,
-          description: mediaItem.description || '',
-          media_url: mediaItem.mediaUrl,
-          thumbnail_url: mediaItem.thumbnailUrl,
-          type: mediaItem.type || 'video',
-          category: mediaItem.category || 'General',
-          target_age_group: mediaItem.targetAgeGroup || ['3-5', '6-8'],
-          duration: mediaItem.duration || '0:00',
-          provider: 'direct',
-          status: 'approved',
-          created_at: new Date().toISOString(),
-        },
-      ])
-      .select();
+    const { data, error } = await supabase.from('media_items').insert([primaryRecord]).select();
 
     if (error) {
-      console.warn('Supabase insert warning for Bunny video:', error.message);
+      console.warn('Primary Supabase insert warning for Bunny video, trying minimal fallback record:', error.message);
+      // Minimal schema fallback if custom columns like category/target_age_group cause schema error
+      const minimalRecord = {
+        id: primaryRecord.id,
+        title: primaryRecord.title,
+        description: primaryRecord.description,
+        media_url: primaryRecord.media_url,
+        url: primaryRecord.url,
+        thumbnail_url: primaryRecord.thumbnail_url,
+        duration: primaryRecord.duration,
+        status: primaryRecord.status,
+      };
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('media_items')
+        .insert([minimalRecord])
+        .select();
+
+      if (fallbackError) {
+        console.warn('Minimal Supabase insert also returned notice:', fallbackError.message);
+      }
+      return fallbackData;
     }
     return data;
   } catch (err) {

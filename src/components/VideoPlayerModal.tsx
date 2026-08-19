@@ -4,6 +4,7 @@ import { X, ExternalLink, Sparkles, PlayCircle, Play, Headphones, AlertCircle } 
 import { TvVideoPlayer } from './TvVideoPlayer';
 import { soundFx } from '../utils/soundAndTTS';
 import { parseExternalVideoUrl } from '../utils/mediaUtils';
+import { useTvNavigation } from '../hooks/useTvNavigation';
 
 interface VideoPlayerModalProps {
   media: MediaItem;
@@ -19,6 +20,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   onClose,
 }) => {
   const [audioError, setAudioError] = useState(false);
+
+  // TV Remote Navigation listener for modal close on Back / Return key
+  useTvNavigation({
+    onBack: onClose,
+    enabled: !!media,
+  });
 
   if (!media) return null;
 
@@ -38,8 +45,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
+              tabIndex={0}
               onClick={() => window.open(targetWatchUrl, '_blank', 'noopener,noreferrer')}
-              className="hidden sm:flex items-center gap-1.5 bg-white/30 hover:bg-white/50 text-slate-900 font-extrabold text-xs px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm border border-black/10"
+              className="hidden sm:flex items-center gap-1.5 bg-white/30 hover:bg-white/50 text-slate-900 font-extrabold text-xs px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-sm border border-black/10 focus:outline-none focus:ring-2 focus:ring-slate-900"
               title="Open video directly in new tab"
             >
               <ExternalLink className="w-3.5 h-3.5" />
@@ -48,11 +56,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
             <button
               type="button"
+              tabIndex={0}
               onClick={() => {
                 soundFx.playPop();
                 onClose();
               }}
-              className="p-1.5 rounded-full bg-white/20 hover:bg-white/40 text-slate-900 transition-colors cursor-pointer"
+              className="p-1.5 rounded-full bg-white/20 hover:bg-white/40 text-slate-900 transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-slate-900"
+              title="Close video player (TV Remote Back / Esc)"
             >
               <X className="w-5 h-5" />
             </button>
@@ -103,7 +113,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   <PlayCircle className="w-4 h-4 text-amber-400" />
                   <span>Next Safe Videos for Kids</span>
                 </h4>
-                <span className="text-[10px] text-slate-400 font-bold">Tap to play next</span>
+                <span className="text-[10px] text-slate-400 font-bold">Select with TV Remote to play next</span>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -111,11 +121,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   <button
                     key={item.id}
                     type="button"
+                    tabIndex={0}
                     onClick={() => {
                       soundFx.playPop();
                       if (onSelectRelated) onSelectRelated(item);
                     }}
-                    className="bg-slate-900 border border-slate-800 hover:border-amber-400 p-2 rounded-xl text-left transition-all group flex flex-col justify-between cursor-pointer"
+                    className="bg-slate-900 border border-slate-800 hover:border-amber-400 focus:border-amber-400 focus:ring-4 focus:ring-amber-400 focus:outline-none p-2 rounded-xl text-left transition-all group flex flex-col justify-between cursor-pointer"
                   >
                     <div className="relative aspect-video w-full rounded-lg overflow-hidden bg-slate-950 mb-1.5">
                       <img
@@ -124,7 +135,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                         referrerPolicy="no-referrer"
                       />
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity">
                         <Play className="w-5 h-5 text-amber-400 fill-current" />
                       </div>
                       <span className="absolute bottom-1 right-1 bg-black/80 text-[9px] text-white px-1 rounded font-bold">

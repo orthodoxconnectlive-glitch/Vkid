@@ -14,10 +14,10 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
-  ShieldCheck,
   GraduationCap,
   Building2,
   Users,
+  Send,
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
 
@@ -33,6 +33,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
     closeAuthModal,
     login,
     signUp,
+    resendVerificationEmail,
   } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
@@ -45,9 +46,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
 
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [isEmailUnconfirmed, setIsEmailUnconfirmed] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
 
   const t = (key: string, fallback?: string) => getTranslation(currentLanguage, key, fallback);
 
@@ -57,6 +61,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
       setAccountType(authModalAccountType || 'parent');
       setErrorMsg('');
       setSuccessMsg('');
+      setIsEmailUnconfirmed(false);
+      setResendSuccess(false);
     }
   }, [authModalOpen, authModalInitialTab, authModalAccountType]);
 
@@ -67,6 +73,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
     setActiveTab(tab);
     setErrorMsg('');
     setSuccessMsg('');
+    setIsEmailUnconfirmed(false);
+    setResendSuccess(false);
   };
 
   const handleAccountTypeChange = (type: 'parent' | 'educator') => {
@@ -74,6 +82,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
     setAccountType(type);
     setErrorMsg('');
     setSuccessMsg('');
+    setIsEmailUnconfirmed(false);
+    setResendSuccess(false);
   };
 
   const validateForm = () => {
@@ -106,6 +116,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
     soundFx.playPop();
     setErrorMsg('');
     setSuccessMsg('');
+    setIsEmailUnconfirmed(false);
+    setResendSuccess(false);
 
     if (!validateForm()) return;
 
@@ -115,7 +127,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
       if (activeTab === 'login') {
         const result = await login(email, password, accountType);
         if (!result.success) {
-          setErrorMsg(result.error || 'Invalid credentials. Please try again.');
+          if (result.isEmailUnconfirmed) {
+            setIsEmailUnconfirmed(true);
+            setErrorMsg('Please verify your email address before signing in.');
+          } else {
+            setErrorMsg(result.error || 'Invalid credentials. Please try again.');
+          }
           setIsSubmitting(false);
         } else {
           soundFx.playSuccess();
@@ -132,15 +149,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
           setIsSubmitting(false);
         } else {
           soundFx.playSuccess();
-          if (result.message) {
-            setSuccessMsg(result.message);
+          if (result.isEmailUnconfirmed) {
+            setIsEmailUnconfirmed(true);
+            setSuccessMsg(result.message || 'Account created! Please verify your email address before signing in.');
           } else {
-            setSuccessMsg(`Account created successfully! Welcome to ${accountType === 'educator' ? 'School Educator Portal' : 'VKid Platform'}.`);
+            setSuccessMsg(result.message || `Account created successfully! Welcome to ${accountType === 'educator' ? 'School Educator Portal' : 'VKid Platform'}.`);
+            setTimeout(() => {
+              setIsSubmitting(false);
+              closeAuthModal();
+            }, 1200);
           }
-          setTimeout(() => {
-            setIsSubmitting(false);
-            closeAuthModal();
-          }, 1000);
+          setIsSubmitting(false);
         }
       }
     } catch (err: any) {
@@ -149,17 +168,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
     }
   };
 
+  const handleResendVerification = async () => {
+    if (!email.trim() || !email.includes('@')) {
+      setErrorMsg('Please enter your email address to resend verification.');
+      return;
+    }
+
+    soundFx.playPop();
+    setIsResending(true);
+    setErrorMsg('');
+
+    try {
+      const res = await resendVerificationEmail(email);
+      if (res.success) {
+        soundFx.playSuccess();
+        setResendSuccess(true);
+        setSuccessMsg('Verification email resent! Please check your inbox.');
+      } else {
+        setErrorMsg(res.error || 'Could not resend verification email. Please try again later.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to resend verification email.');
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl max-w-md w-full border-4 border-amber-300 shadow-2xl relative my-auto p-5 sm:p-7 text-slate-800">
         {/* Close Button */}
         <button
+          type="button"
+          tabIndex={0}
           onClick={() => {
             soundFx.playPop();
             closeAuthModal();
           }}
           disabled={isSubmitting}
-          className="absolute top-4 right-4 p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors disabled:opacity-50"
+          className="absolute top-4 right-4 p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-amber-400 cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -187,8 +234,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
         <div className="bg-slate-100 p-1 rounded-2xl mb-4 flex border border-slate-200 gap-1">
           <button
             type="button"
+            tabIndex={0}
             onClick={() => handleAccountTypeChange('parent')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-extrabold transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 ${
               accountType === 'parent'
                 ? 'bg-amber-500 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -200,8 +248,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
 
           <button
             type="button"
+            tabIndex={0}
             onClick={() => handleAccountTypeChange('educator')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-extrabold transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
               accountType === 'educator'
                 ? 'bg-indigo-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -216,8 +265,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
         <div className="flex bg-slate-50 p-1 rounded-xl mb-4 border border-slate-200">
           <button
             type="button"
+            tabIndex={0}
             onClick={() => handleTabSwitch('login')}
-            className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
+            className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 ${
               activeTab === 'login'
                 ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
                 : 'text-slate-500 hover:text-slate-900'
@@ -229,8 +279,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
 
           <button
             type="button"
+            tabIndex={0}
             onClick={() => handleTabSwitch('register')}
-            className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
+            className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 ${
               activeTab === 'register'
                 ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
                 : 'text-slate-500 hover:text-slate-900'
@@ -241,14 +292,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
           </button>
         </div>
 
-        {/* Alerts */}
-        {errorMsg && (
+        {/* Unconfirmed Email Notice & Resend Action */}
+        {isEmailUnconfirmed && (
+          <div className="mb-4 p-3.5 bg-amber-50 border-2 border-amber-300 rounded-2xl text-amber-900 text-xs font-bold space-y-2 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+              <span>Please verify your email address before signing in.</span>
+            </div>
+            {!resendSuccess ? (
+              <button
+                type="button"
+                tabIndex={0}
+                onClick={handleResendVerification}
+                disabled={isResending}
+                className="w-full flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-extrabold text-xs py-2 px-3 rounded-xl transition-all shadow-sm focus:outline-none focus:ring-4 focus:ring-amber-400 cursor-pointer disabled:opacity-50"
+              >
+                {isResending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Resending verification email...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Resend Verification Email</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <div className="p-2 bg-emerald-100 border border-emerald-300 rounded-xl text-emerald-800 text-[11px] font-extrabold flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>Verification email resent! Please check your inbox.</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Standard Error Alert */}
+        {errorMsg && !isEmailUnconfirmed && (
           <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 text-xs font-bold flex items-center gap-2 animate-in fade-in">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
+        {/* Standard Success Alert */}
         {successMsg && (
           <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
             <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
@@ -268,10 +356,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
                 <UserIcon className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
+                  tabIndex={0}
                   placeholder={accountType === 'educator' ? 'e.g. Ms. Clara Oswald' : 'e.g. Sarah Connor'}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-400 transition-colors"
                   required={activeTab === 'register'}
                 />
               </div>
@@ -288,10 +377,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
                 <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
+                  tabIndex={0}
                   placeholder="e.g. St. Mark Orthodox Academy"
                   value={schoolName}
                   onChange={(e) => setSchoolName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-400 transition-colors"
                   required
                 />
               </div>
@@ -307,10 +397,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
               <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="email"
+                tabIndex={0}
                 placeholder={accountType === 'educator' ? 'teacher@school.edu' : 'parent@example.com'}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-amber-400 transition-colors"
                 required
               />
             </div>
@@ -325,16 +416,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
               <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type={showPassword ? 'text' : 'password'}
+                tabIndex={0}
                 placeholder="At least 6 characters"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-10 text-xs font-bold focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-10 text-xs font-bold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-amber-400 transition-colors"
                 required
               />
               <button
                 type="button"
+                tabIndex={0}
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded-md"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -351,55 +444,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  tabIndex={0}
                   placeholder="Re-enter password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:border-indigo-500 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-400 transition-colors"
                   required
                 />
               </div>
             </div>
           )}
 
-          {/* Quick Demo Credentials Hint */}
-          <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl text-[11px] text-indigo-950 font-medium flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              {accountType === 'educator' ? (
-                <GraduationCap className="w-4 h-4 text-indigo-600 shrink-0" />
-              ) : (
-                <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-              )}
-              <span>
-                {accountType === 'educator' ? 'Teacher Demo:' : 'Admin Demo:'}{' '}
-                <strong>
-                  {accountType === 'educator' ? 'teacher@stmark.edu' : 'orthodoxconnect.live@gmail.com'}
-                </strong>
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                soundFx.playPop();
-                if (accountType === 'educator') {
-                  setEmail('teacher@stmark.edu');
-                  setPassword('teacher123');
-                  setFullName('Ms. Clara Oswald');
-                  setSchoolName('St. Mark Orthodox Academy');
-                } else {
-                  setEmail('orthodoxconnect.live@gmail.com');
-                  setPassword('superadmin123');
-                }
-              }}
-              className="bg-indigo-200 hover:bg-indigo-300 text-indigo-900 font-extrabold text-[10px] px-2 py-1 rounded-lg transition-colors"
-            >
-              Fill Demo
-            </button>
-          </div>
-
           <button
             type="submit"
+            tabIndex={0}
             disabled={isSubmitting}
-            className={`w-full font-extrabold text-xs py-3 rounded-2xl shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 ${
+            className={`w-full font-extrabold text-xs py-3 rounded-2xl shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-4 focus:ring-amber-400 ${
               accountType === 'educator'
                 ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
                 : activeTab === 'login'

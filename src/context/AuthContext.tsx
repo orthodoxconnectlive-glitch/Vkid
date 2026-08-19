@@ -55,14 +55,19 @@ interface AuthContextType {
   activeClass: Classroom | null;
   openAuthModal: (tab?: 'login' | 'register', accountType?: 'parent' | 'educator') => void;
   closeAuthModal: () => void;
-  login: (email: string, pass: string, accountType?: 'parent' | 'educator') => Promise<{ success: boolean; error?: string }>;
+  login: (
+    email: string,
+    pass: string,
+    accountType?: 'parent' | 'educator'
+  ) => Promise<{ success: boolean; error?: string; isEmailUnconfirmed?: boolean }>;
   signUp: (
     email: string,
     pass: string,
     fullName?: string,
     accountType?: 'parent' | 'educator',
     schoolName?: string
-  ) => Promise<{ success: boolean; error?: string; message?: string }>;
+  ) => Promise<{ success: boolean; error?: string; message?: string; isEmailUnconfirmed?: boolean }>;
+  resendVerificationEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   updateSchoolData: (schoolName: string, classes: Classroom[], activeClassId?: string) => void;
   togglePresentationMode: (enabled?: boolean) => void;
@@ -124,16 +129,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } catch (err) {
           console.warn('Error fetching Supabase auth session:', err);
-        }
-      } else {
-        // Local storage fallback for persistent mock auth session when Supabase env vars aren't attached
-        const savedLocalUser = localStorage.getItem('vkid_auth_user');
-        if (savedLocalUser && mounted) {
-          try {
-            setUser(JSON.parse(savedLocalUser));
-          } catch (e) {
-            localStorage.removeItem('vkid_auth_user');
-          }
         }
       }
 
@@ -204,64 +199,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     email: string,
     pass: string,
     accountType: 'parent' | 'educator' = 'parent'
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; isEmailUnconfirmed?: boolean }> => {
     const cleanEmail = email.trim().toLowerCase();
 
-    if (supabase) {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password: pass,
-      });
+    if (!supabase) {
+      return {
+        success: false,
+        error: 'Supabase authentication is not configured. Please verify your environment variables.',
+      };
+    }
 
-      if (error) {
-        return { success: false, error: error.message };
-      }
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password: pass,
+    });
 
-      if (data.user) {
-        const userEmail = data.user.email || cleanEmail;
-        const appMetaRole = data.user.app_metadata?.role;
-        const userMetaRole = data.user.user_metadata?.role;
-        const isAdmin = checkIsAdmin(userEmail, (data.user as any).role || userMetaRole, appMetaRole);
-        const effectiveRole = isAdmin ? 'admin' : (userMetaRole || accountType);
+    if (error) {
+      const errMsg = error.message || '';
+      const isUnconfirmed =
+        errMsg.toLowerCase().includes('confirm') ||
+        errMsg.toLowerCase().includes('not confirmed') ||
+        errMsg.toLowerCase().includes('unverified') ||
+        (error as any).code === 'email_not_confirmed';
 
-        const schoolName = data.user.user_metadata?.schoolName || (effectiveRole === 'educator' ? 'St. Mark Orthodox Academy' : undefined);
-        const classes = data.user.user_metadata?.classes || (effectiveRole === 'educator' ? getStoredClasses(data.user.id) : undefined);
+      return {
+        success: false,
+        error: isUnconfirmed ? 'Please verify your email address before signing in.' : errMsg,
+        isEmailUnconfirmed: isUnconfirmed,
+      };
+    }
 
-        setUser({
-          id: data.user.id,
-          email: userEmail,
-          fullName: data.user.user_metadata?.full_name || userEmail.split('@')[0],
-          role: effectiveRole,
-          schoolName,
-          classes,
-          activeClassId: classes?.[0]?.id,
-          presentationMode: false,
-          app_metadata: data.user.app_metadata,
-          user_metadata: data.user.user_metadata,
-        });
-      }
-      return { success: true };
-    } else {
-      // Fallback local auth simulation
-      const isAdmin = checkIsAdmin(cleanEmail, 'parent');
-      const role = isAdmin ? 'admin' : accountType;
-      const schoolName = role === 'educator' ? 'St. Mark Orthodox Academy' : undefined;
-      const classes = role === 'educator' ? DEFAULT_EDUCATOR_CLASSES : undefined;
+    if (data.user) {
+      const userEmail = data.user.email || cleanEmail;
+      const appMetaRole = data.user.app_metadata?.role;
+      const userMetaRole = data.user.user_metadata?.role;
+      const isAdmin = checkIsAdmin(userEmail, (data.user as any).role || userMetaRole, appMetaRole);
+      const effectiveRole = isAdmin ? 'admin' : (userMetaRole || accountType);
 
-      const mockUser: AppUser = {
-        id: `usr_${Date.now()}`,
-        email: cleanEmail,
-        fullName: cleanEmail.split('@')[0],
-        role,
+      const schoolName = data.user.user_metadata?.schoolName || (effectiveRole === 'educator' ? 'St. Mark Orthodox Academy' : undefined);
+      const classes = data.user.user_metadata?.classes || (effectiveRole === 'educator' ? getStoredClasses(data.user.id) : undefined);
+
+      setUser({
+        id: data.user.id,
+        email: userEmail,
+        fullName: data.user.user_metadata?.full_name || userEmail.split('@')[0],
+        role: effectiveRole,
         schoolName,
         classes,
         activeClassId: classes?.[0]?.id,
         presentationMode: false,
-      };
-      setUser(mockUser);
-      localStorage.setItem('vkid_auth_user', JSON.stringify(mockUser));
+        app_metadata: data.user.app_metadata,
+        user_metadata: data.user.user_metadata,
+        avatarUrl: data.user.user_metadata?.avatar_url,
+      });
       return { success: true };
     }
+
+    return { success: false, error: 'Authentication failed. Please check your credentials.' };
   };
 
   const signUp = async (
@@ -270,59 +264,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fullName?: string,
     accountType: 'parent' | 'educator' = 'parent',
     schoolNameInput?: string
-  ): Promise<{ success: boolean; error?: string; message?: string }> => {
+  ): Promise<{ success: boolean; error?: string; message?: string; isEmailUnconfirmed?: boolean }> => {
     const cleanEmail = email.trim().toLowerCase();
     const assignedRole = accountType === 'educator' ? 'educator' : 'parent';
     const schoolName = assignedRole === 'educator' ? (schoolNameInput || 'St. Mark Orthodox Academy') : undefined;
     const classes = assignedRole === 'educator' ? DEFAULT_EDUCATOR_CLASSES : undefined;
 
-    if (supabase) {
-      const { data, error } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password: pass,
-        options: {
-          data: {
-            full_name: fullName || cleanEmail.split('@')[0],
-            role: assignedRole,
-            schoolName,
-            classes,
-          },
-        },
-      });
+    if (!supabase) {
+      return {
+        success: false,
+        error: 'Supabase authentication is not configured. Please verify your environment variables.',
+      };
+    }
 
-      if (error) {
-        return { success: false, error: error.message };
-      }
-
-      if (data.user) {
-        const isAdmin = checkIsAdmin(cleanEmail, assignedRole);
-        const effectiveRole = isAdmin ? 'admin' : assignedRole;
-
-        const appUserData: AppUser = {
-          id: data.user.id,
-          email: cleanEmail,
-          fullName: fullName || cleanEmail.split('@')[0],
-          role: effectiveRole,
+    const { data, error } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password: pass,
+      options: {
+        data: {
+          full_name: fullName || cleanEmail.split('@')[0],
+          role: assignedRole,
           schoolName,
           classes,
-          activeClassId: classes?.[0]?.id,
-          presentationMode: false,
-          app_metadata: data.user.app_metadata,
-          user_metadata: data.user.user_metadata,
-        };
+        },
+      },
+    });
 
-        setUser(appUserData);
-        localStorage.setItem('vkid_auth_user', JSON.stringify(appUserData));
-        return { success: true, message: `Account created for ${fullName || cleanEmail}! Signed in as ${assignedRole}.` };
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    if (data.user) {
+      // Check if email confirmation is required (session might be null if email confirmation is enabled in Supabase)
+      if (data.user && !data.session) {
+        return {
+          success: true,
+          message: 'Account created! Please check your email inbox to confirm your address before signing in.',
+          isEmailUnconfirmed: true,
+        };
       }
-      return { success: true };
-    } else {
-      // Fallback local auth simulation
+
       const isAdmin = checkIsAdmin(cleanEmail, assignedRole);
       const effectiveRole = isAdmin ? 'admin' : assignedRole;
 
-      const mockUser: AppUser = {
-        id: `usr_${Date.now()}`,
+      const appUserData: AppUser = {
+        id: data.user.id,
         email: cleanEmail,
         fullName: fullName || cleanEmail.split('@')[0],
         role: effectiveRole,
@@ -330,16 +316,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         classes,
         activeClassId: classes?.[0]?.id,
         presentationMode: false,
+        app_metadata: data.user.app_metadata,
+        user_metadata: data.user.user_metadata,
       };
-      setUser(mockUser);
-      localStorage.setItem('vkid_auth_user', JSON.stringify(mockUser));
+
+      setUser(appUserData);
+      return { success: true, message: `Account created for ${fullName || cleanEmail}! Welcome to ${assignedRole === 'educator' ? 'School Educator Portal' : 'VKid Platform'}.` };
+    }
+
+    return { success: true, message: 'Registration received! Please check your email for confirmation.' };
+  };
+
+  const resendVerificationEmail = async (email: string): Promise<{ success: boolean; error?: string }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!supabase) {
+      return { success: false, error: 'Supabase authentication is not configured.' };
+    }
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: cleanEmail,
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
       return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to resend verification email.' };
     }
   };
 
   const logout = async () => {
     if (supabase) {
-      await supabase.auth.signOut();
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('Sign out error:', err);
+      }
     }
     setUser(null);
     setIsPresentationMode(false);
@@ -360,7 +375,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setUser(updatedUser);
     localStorage.setItem(`vkid_classes_${user.id}`, JSON.stringify(classes));
-    localStorage.setItem('vkid_auth_user', JSON.stringify(updatedUser));
 
     // Try updating Supabase metadata async if available
     if (supabase && user.id) {
@@ -391,6 +405,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         closeAuthModal,
         login,
         signUp,
+        resendVerificationEmail,
         logout,
         updateSchoolData,
         togglePresentationMode,
