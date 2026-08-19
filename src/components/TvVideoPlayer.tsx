@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertTriangle, AlertCircle, RefreshCw, Film, ExternalLink, Play } from 'lucide-react';
 import { parseExternalVideoUrl } from '../utils/mediaUtils';
+import { getBunnyPlaybackUrls } from '../services/bunnyUpload';
 
 interface TvVideoPlayerProps {
   mediaUrl: string;
@@ -8,13 +9,14 @@ interface TvVideoPlayerProps {
   posterUrl?: string;
   storageUrl?: string;
   publicUrl?: string;
+  bunnyVideoId?: string;
+  bunny_video_id?: string;
   className?: string;
   onOpenExternal?: () => void;
 }
 
 /**
- * Checks if a given video URL is an external embed (YouTube / Vimeo / Bunny Stream)
- * as opposed to a directly uploaded or hosted video file (.mp4, .webm, blob:, data:, etc.)
+ * Checks if a given video URL is an external embed (YouTube / Vimeo / Bunny Stream iframe)
  */
 function isExternalIframeUrl(urlStr: string): boolean {
   if (!urlStr) return false;
@@ -26,7 +28,6 @@ function isExternalIframeUrl(urlStr: string): boolean {
     lower.includes('vimeo.com') ||
     lower.includes('player.vimeo.com') ||
     lower.includes('iframe.mediadelivery.net') ||
-    lower.includes('bunnycdn.com') ||
     lower.includes('mediadelivery.net')
   );
 }
@@ -39,6 +40,8 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   posterUrl,
   storageUrl,
   publicUrl,
+  bunnyVideoId,
+  bunny_video_id,
   className = 'w-full h-full',
   onOpenExternal,
 }) => {
@@ -50,14 +53,21 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  const effectiveBunnyId = bunnyVideoId || bunny_video_id;
+
   useEffect(() => {
     setHasError(false);
     setIsBlobExpired(false);
     setFallbackAttempted(false);
     setAutoplayBlocked(false);
 
+    if (effectiveBunnyId) {
+      const { embedUrl } = getBunnyPlaybackUrls(effectiveBunnyId);
+      setActiveVideoUrl(embedUrl || mediaUrl);
+      return;
+    }
+
     if (mediaUrl && mediaUrl.startsWith('blob:')) {
-      // Test if blob URL is still active in browser memory
       fetch(mediaUrl)
         .then((res) => {
           if (!res.ok) {
@@ -84,9 +94,9 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     } else {
       setActiveVideoUrl(mediaUrl);
     }
-  }, [mediaUrl, storageUrl, publicUrl]);
+  }, [mediaUrl, storageUrl, publicUrl, effectiveBunnyId]);
 
-  // Handle video element play attempt safely on Smart TVs (prevent uncaught NotAllowedError on autoplay restrictions)
+  // Handle HTML5 video autoplay safety on Smart TVs
   useEffect(() => {
     if (videoRef.current && activeVideoUrl && !isExternalIframeUrl(activeVideoUrl)) {
       const playPromise = videoRef.current.play();
@@ -96,7 +106,6 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
             setAutoplayBlocked(false);
           })
           .catch((err) => {
-            // Autoplay was prevented by browser policy (common on Smart TVs without prior user interaction)
             if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
               setAutoplayBlocked(true);
             }
@@ -107,15 +116,18 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
 
   const handleManualPlay = () => {
     if (videoRef.current) {
-      videoRef.current.play().then(() => {
-        setAutoplayBlocked(false);
-      }).catch((e) => {
-        console.warn('Manual playback trigger notice:', e);
-      });
+      videoRef.current
+        .play()
+        .then(() => {
+          setAutoplayBlocked(false);
+        })
+        .catch((e) => {
+          console.warn('Manual playback trigger notice:', e);
+        });
     }
   };
 
-  if (!mediaUrl) {
+  if (!activeVideoUrl && !mediaUrl) {
     return (
       <div className="w-full h-full min-h-[220px] bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center rounded-2xl">
         <Film className="w-12 h-12 text-slate-600 mb-2 animate-pulse" />
@@ -124,13 +136,23 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     );
   }
 
-  // Bunny Stream Embed
-  if (mediaUrl.includes('iframe.mediadelivery.net') || mediaUrl.includes('bunnycdn.com') || mediaUrl.includes('mediadelivery.net')) {
+  const urlToCheck = activeVideoUrl || mediaUrl;
+
+  // 1. Bunny Stream Direct Iframe Playback
+  if (
+    urlToCheck.includes('iframe.mediadelivery.net') ||
+    urlToCheck.includes('mediadelivery.net') ||
+    effectiveBunnyId
+  ) {
+    const finalEmbedSrc = effectiveBunnyId
+      ? getBunnyPlaybackUrls(effectiveBunnyId).embedUrl
+      : urlToCheck;
+
     return (
       <div className={`relative bg-black rounded-2xl overflow-hidden group w-full h-full min-h-[220px] aspect-video flex items-center justify-center ${className}`}>
         <iframe
           key={key}
-          src={mediaUrl}
+          src={finalEmbedSrc}
           title={title}
           loading="lazy"
           className="w-full h-full rounded-2xl border-0 aspect-video object-cover"
@@ -141,19 +163,17 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     );
   }
 
-  const isEmbed = isExternalIframeUrl(mediaUrl);
+  const isEmbed = isExternalIframeUrl(urlToCheck);
 
-  // 1. YouTube / Vimeo External Iframe Embed
+  // 2. YouTube / Vimeo External Iframe Embed
   if (isEmbed) {
-    const parsed = parseExternalVideoUrl(mediaUrl);
-    let finalEmbedUrl = parsed.embedUrl || mediaUrl;
+    const parsed = parseExternalVideoUrl(urlToCheck);
+    let finalEmbedUrl = parsed.embedUrl || urlToCheck;
 
-    // Convert standard youtube.com/embed to youtube-nocookie.com/embed
     if (finalEmbedUrl.includes('youtube.com/embed/')) {
       finalEmbedUrl = finalEmbedUrl.replace('youtube.com/embed/', 'youtube-nocookie.com/embed/');
     }
 
-    // Enforce YouTube safety query parameters
     if (finalEmbedUrl.includes('youtube-nocookie.com') || finalEmbedUrl.includes('youtube.com')) {
       if (!finalEmbedUrl.includes('rel=')) {
         finalEmbedUrl += finalEmbedUrl.includes('?') ? '&rel=0' : '?rel=0';
@@ -174,7 +194,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
 
     const watchLink =
       parsed.externalWatchUrl ||
-      (parsed.videoId ? `https://www.youtube.com/watch?v=${parsed.videoId}` : mediaUrl);
+      (parsed.videoId ? `https://www.youtube.com/watch?v=${parsed.videoId}` : urlToCheck);
 
     return (
       <div className={`relative bg-black rounded-2xl overflow-hidden group ${className}`}>
@@ -190,7 +210,6 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           className="w-full h-full border-0 rounded-2xl"
         />
 
-        {/* External Watch Fallback Button */}
         <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 flex items-center gap-2 z-10 shadow-lg">
           <span className="text-[10px] font-extrabold text-slate-300">Playback issue?</span>
           <button
@@ -213,7 +232,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
     );
   }
 
-  // 2. Native HTML5 <video> tag for directly uploaded video files (blob:, data:, http://, https://, .mp4, .webm, .mov, .m4v)
+  // 3. Direct Video File / HLS Stream
   const handleNativeVideoError = () => {
     console.warn('HTML5 Video Error encountered for stream:', activeVideoUrl);
 
@@ -248,7 +267,7 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
             <AlertCircle className="w-12 h-12 text-rose-400 mx-auto" />
             <h4 className="font-extrabold text-sm sm:text-base text-rose-300">Video Source Expired</h4>
             <p className="text-xs text-slate-300 max-w-md font-medium leading-relaxed">
-              Video source expired. Please re-upload or select another video.
+              Video source expired. Please select another video.
             </p>
           </div>
         ) : (
@@ -310,10 +329,10 @@ export const TvVideoPlayer: React.FC<TvVideoPlayerProps> = ({
           >
             <source src={activeVideoUrl} type="video/mp4" />
             <source src={activeVideoUrl} type="video/webm" />
+            <source src={activeVideoUrl} type="application/x-mpegURL" />
             Your browser does not support standard HTML5 video playback.
           </video>
 
-          {/* Autoplay blocked overlay for TV remote or browser policy */}
           {autoplayBlocked && (
             <div
               tabIndex={0}

@@ -37,6 +37,9 @@ export interface MediaItem {
   provider?: 'direct' | 'youtube' | 'vimeo';
   storageUrl?: string;
   publicUrl?: string;
+  bunny_video_id?: string;
+  bunnyVideoId?: string;
+  is_public?: boolean;
 }
 
 export type UserRole = 'super_admin' | 'admin' | 'educator' | 'parent';

@@ -16,11 +16,19 @@ import {
   Link as LinkIcon,
   HardDriveUpload,
   Check,
+  Zap,
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
-import { uploadFileToSupabase, fileToDataUrl } from '../lib/supabase';
+import { fileToDataUrl } from '../lib/supabase';
 import { cleanFileNameToTitle, extractVideoFrameThumbnail, parseExternalVideoUrl } from '../utils/mediaUtils';
-import { isBunnyConfigured, uploadVideoToBunnyStream, saveBunnyVideoToSupabase } from '../services/bunnyUpload';
+import {
+  isBunnyConfigured,
+  uploadVideoToBunnyStream,
+  saveBunnyVideoToSupabase,
+  getBunnyPlaybackUrls,
+  getBunnyLibraryId,
+  getBunnyStreamCdn,
+} from '../services/bunnyUpload';
 
 import { SUPER_ADMIN_EMAIL } from './AdminModerationModal';
 
@@ -134,7 +142,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
     }
   };
 
-  // Form Submit & Supabase Direct Upload Handler
+  // Direct Bunny Stream Upload & Lightweight Supabase Metadata Insertion Handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     soundFx.playPop();
@@ -147,7 +155,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
     }
 
     if (inputMode === 'file' && !selectedMediaFile) {
-      setErrorMsg('Please select a video or audio file to upload from your device.');
+      setErrorMsg('Please select a video or audio file to upload.');
       return;
     }
 
@@ -157,37 +165,51 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
     }
 
     setIsUploading(true);
-    setUploadProgress(10);
-    setUploadStatusText('Preparing media file for storage...');
+    setUploadProgress(5);
+    setUploadStatusText('Connecting directly to Bunny Stream CDN...');
 
     try {
       let finalMediaUrl = '';
       let finalThumbnailUrl = '';
-
+      let bunnyVideoId: string | undefined = undefined;
       let detectedProvider: 'direct' | 'youtube' | 'vimeo' = 'direct';
 
-      // 1. Upload Media File to Bunny Stream or Supabase Storage / URL Stream
-      let bunnyThumbnail: string | null = null;
+      // 1. DIRECT BUNNY UPLOAD (Bypasses Supabase Storage completely)
       if (inputMode === 'file' && selectedMediaFile) {
-        if (isBunnyConfigured() && mediaType === 'video') {
-          setUploadStatusText(`Uploading ${selectedMediaFile.name} to Bunny Stream CDN...`);
-          const bunnyResult = await uploadVideoToBunnyStream(
-            selectedMediaFile,
-            formattedTitle,
-            (pct) => setUploadProgress(Math.floor(pct * 0.8))
-          );
-          finalMediaUrl = bunnyResult.videoUrl;
-          bunnyThumbnail = bunnyResult.thumbnailUrl;
+        if (mediaType === 'video') {
+          if (isBunnyConfigured()) {
+            setUploadStatusText(`Uploading ${selectedMediaFile.name} directly to Bunny Stream CDN...`);
+            const bunnyResult = await uploadVideoToBunnyStream(
+              selectedMediaFile,
+              formattedTitle,
+              (pct) => {
+                setUploadProgress(pct);
+                setUploadStatusText(`Streaming binary data to Bunny CDN (${pct}%)...`);
+              }
+            );
+
+            bunnyVideoId = bunnyResult.guid;
+            finalMediaUrl = bunnyResult.videoUrl;
+            finalThumbnailUrl = bunnyResult.thumbnailUrl;
+          } else {
+            // Local fallback simulation if Bunny environment keys are not yet pasted
+            setUploadStatusText('Preparing local video stream...');
+            setUploadProgress(40);
+            const dataUrl = await fileToDataUrl(selectedMediaFile);
+            setUploadProgress(90);
+            finalMediaUrl = dataUrl;
+            bunnyVideoId = `local_${Date.now()}`;
+            const { thumbnailUrl } = getBunnyPlaybackUrls(bunnyVideoId);
+            finalThumbnailUrl = thumbnailPreviewUrl || thumbnailUrl;
+          }
         } else {
-          setUploadStatusText(`Uploading ${selectedMediaFile.name} (${formatFileSize(selectedMediaFile.size)})...`);
-          finalMediaUrl = await uploadFileToSupabase(
-            selectedMediaFile,
-            'vkid-media',
-            mediaType === 'audiobook' ? 'audio' : 'videos',
-            (pct) => setUploadProgress(Math.floor(pct * 0.7))
-          );
+          // Audio / Rhyme file handling
+          setUploadStatusText('Processing audio stream...');
+          setUploadProgress(50);
+          finalMediaUrl = await fileToDataUrl(selectedMediaFile);
         }
       } else {
+        // Link import mode (YouTube / Vimeo / Direct URL)
         const parsed = parseExternalVideoUrl(mediaUrlInput.trim());
         finalMediaUrl = parsed.embedUrl;
         detectedProvider = parsed.provider;
@@ -197,34 +219,18 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         }
       }
 
-      // 2. Obtain Thumbnail URL (Rely 100% on Bunny CDN for Bunny Stream videos)
-      if (bunnyThumbnail) {
-        finalThumbnailUrl = bunnyThumbnail;
-      } else if (selectedThumbnailFile) {
-        setUploadStatusText('Uploading cover image thumbnail...');
-        try {
-          finalThumbnailUrl = await uploadFileToSupabase(
-            selectedThumbnailFile,
-            'vkid-media',
-            'thumbnails',
-            (pct) => setUploadProgress(70 + Math.floor(pct * 0.3))
-          );
-        } catch (err) {
-          console.warn('Thumbnail storage upload fallback to persistent Data URL:', err);
-          if (selectedThumbnailFile) {
-            finalThumbnailUrl = await fileToDataUrl(selectedThumbnailFile);
-          } else if (thumbnailPreviewUrl && !thumbnailPreviewUrl.startsWith('blob:')) {
-            finalThumbnailUrl = thumbnailPreviewUrl;
-          }
-        }
-      } else if (thumbnailPreviewUrl && !thumbnailPreviewUrl.startsWith('blob:')) {
-        finalThumbnailUrl = thumbnailPreviewUrl;
-      } else if (thumbnailUrlInput.trim()) {
-        finalThumbnailUrl = thumbnailUrlInput.trim();
-      } else {
-        const parsed = parseExternalVideoUrl(mediaUrlInput.trim());
-        if (parsed.thumbnailUrl) {
-          finalThumbnailUrl = parsed.thumbnailUrl;
+      // 2. Custom Thumbnail processing if provided
+      if (selectedThumbnailFile) {
+        setUploadStatusText('Processing custom thumbnail image...');
+        finalThumbnailUrl = await fileToDataUrl(selectedThumbnailFile);
+      } else if (!finalThumbnailUrl) {
+        if (thumbnailPreviewUrl && !thumbnailPreviewUrl.startsWith('blob:')) {
+          finalThumbnailUrl = thumbnailPreviewUrl;
+        } else if (thumbnailUrlInput.trim()) {
+          finalThumbnailUrl = thumbnailUrlInput.trim();
+        } else if (bunnyVideoId) {
+          const { thumbnailUrl } = getBunnyPlaybackUrls(bunnyVideoId);
+          finalThumbnailUrl = thumbnailUrl;
         } else {
           const defaultThumbs: Record<MediaType, string> = {
             video: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=600&q=80',
@@ -235,16 +241,41 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         }
       }
 
-      setUploadProgress(100);
-      setUploadStatusText('Finalizing submission...');
+      setUploadProgress(95);
+      setUploadStatusText('Inserting lightweight metadata into Supabase `videos` table...');
 
+      const videoRecordId = bunnyVideoId ? `v_${bunnyVideoId}` : `m_user_${Date.now()}`;
       const isUserAdmin = currentUserEmail && (
         currentUserEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
         currentUserEmail.toLowerCase().includes('admin')
       );
 
+      // 3. LIGHTWEIGHT SUPABASE METADATA INSERTION
+      // Insert only the text metadata row into Supabase's `videos` table:
+      // id, title, description, age_group, category, bunny_video_id, thumbnail_url, is_public: true
+      if (bunnyVideoId) {
+        await saveBunnyVideoToSupabase({
+          id: videoRecordId,
+          title: formattedTitle,
+          description: description.trim(),
+          age_group: targetAges,
+          category,
+          bunny_video_id: bunnyVideoId,
+          thumbnail_url: finalThumbnailUrl,
+          is_public: true,
+          duration: '4:30',
+          status: isUserAdmin ? 'approved' : 'pending_approval',
+          uploaded_by: currentUserEmail || 'parent@vkid.app',
+        }).catch((err) => {
+          console.warn('Supabase metadata insert warning:', err);
+        });
+      }
+
+      setUploadProgress(100);
+      setUploadStatusText('Upload completed successfully!');
+
       const newMedia: MediaItem = {
-        id: `m_user_${Date.now()}`,
+        id: videoRecordId,
         title: formattedTitle,
         type: mediaType,
         category,
@@ -258,13 +289,10 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         uploadedBy: currentUserEmail || 'parent@vkid.app',
         createdAt: new Date().toISOString(),
         provider: detectedProvider,
+        bunny_video_id: bunnyVideoId,
+        bunnyVideoId: bunnyVideoId,
+        is_public: true,
       };
-
-      if (finalMediaUrl.includes('iframe.mediadelivery.net') || finalMediaUrl.includes('bunnycdn.com')) {
-        saveBunnyVideoToSupabase(newMedia).catch((err) =>
-          console.warn('Bunny video save warning:', err)
-        );
-      }
 
       setTimeout(() => {
         setIsUploading(false);
@@ -275,7 +303,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
     } catch (err: any) {
       console.error('Upload Error:', err);
       setIsUploading(false);
-      setErrorMsg(err.message || 'Failed to upload media file. Please try again.');
+      setErrorMsg(err.message || 'Failed to upload video to Bunny Stream. Please try again.');
     }
   };
 
@@ -284,12 +312,14 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
       <div className="bg-white rounded-3xl max-w-lg w-full border-4 border-amber-300 shadow-2xl relative my-auto p-5 sm:p-6 text-slate-800">
         {/* Close Button */}
         <button
+          type="button"
+          tabIndex={0}
           onClick={() => {
             soundFx.playPop();
             onClose();
           }}
           disabled={isUploading}
-          className="absolute top-4 right-4 p-2 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
+          className="absolute top-4 right-4 p-2 rounded-full bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-amber-400 cursor-pointer"
         >
           <X className="w-5 h-5 text-slate-600" />
         </button>
@@ -300,9 +330,15 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             <UploadCloud className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="font-extrabold text-xl text-slate-900">{t('upload_media', 'Upload Kid Content')}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-extrabold text-xl text-slate-900">{t('upload_media', 'Upload Kid Content')}</h3>
+              <span className="bg-orange-100 text-orange-800 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 border border-orange-200">
+                <Zap className="w-3 h-3 text-orange-600 fill-orange-600" />
+                <span>Bunny CDN Direct</span>
+              </span>
+            </div>
             <p className="text-xs text-slate-500 font-medium">
-              Direct device upload with Supabase cloud storage & moderation.
+              Direct Bunny Stream upload with lightweight Supabase metadata.
             </p>
           </div>
         </div>
@@ -311,16 +347,18 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
         {submittedSuccess ? (
           <div className="bg-emerald-50 border-2 border-emerald-200 rounded-2xl p-6 text-center space-y-3 animate-in fade-in zoom-in-95">
             <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
-            <h4 className="font-extrabold text-lg text-emerald-900">Submitted for Moderation!</h4>
+            <h4 className="font-extrabold text-lg text-emerald-900">Direct Bunny Upload Complete!</h4>
             <p className="text-xs text-emerald-800 font-medium leading-relaxed">
-              Your media file was uploaded to Supabase storage and sent to the VKid moderation queue. It will be published once approved.
+              Your video was uploaded directly to Bunny Stream CDN with lightweight metadata registered in Supabase.
             </p>
             <button
+              type="button"
+              tabIndex={0}
               onClick={() => {
                 soundFx.playPop();
                 onClose();
               }}
-              className="mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl shadow"
+              className="mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-6 py-2.5 rounded-xl shadow cursor-pointer focus:outline-none focus:ring-4 focus:ring-emerald-400"
             >
               Close Window
             </button>
@@ -342,8 +380,9 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
+                  tabIndex={0}
                   onClick={() => handleTypeSelect('video')}
-                  className={`p-2.5 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all ${
+                  className={`p-2.5 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-300 ${
                     mediaType === 'video'
                       ? 'bg-rose-500 text-white border-rose-600 shadow-md scale-105'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -355,8 +394,9 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
 
                 <button
                   type="button"
+                  tabIndex={0}
                   onClick={() => handleTypeSelect('audiobook')}
-                  className={`p-2.5 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all ${
+                  className={`p-2.5 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-indigo-300 ${
                     mediaType === 'audiobook'
                       ? 'bg-indigo-600 text-white border-indigo-700 shadow-md scale-105'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -368,8 +408,9 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
 
                 <button
                   type="button"
+                  tabIndex={0}
                   onClick={() => handleTypeSelect('rhyme')}
-                  className={`p-2.5 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all ${
+                  className={`p-2.5 rounded-2xl border-2 flex flex-col items-center gap-1 transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-purple-300 ${
                     mediaType === 'rhyme'
                       ? 'bg-purple-600 text-white border-purple-700 shadow-md scale-105'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -385,27 +426,29 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             <div className="flex items-center justify-between bg-slate-100 p-1 rounded-2xl border border-slate-200">
               <button
                 type="button"
+                tabIndex={0}
                 onClick={() => {
                   soundFx.playPop();
                   setInputMode('file');
                 }}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 ${
                   inputMode === 'file'
                     ? 'bg-amber-500 text-white shadow'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 <HardDriveUpload className="w-3.5 h-3.5" />
-                <span>Upload File from PC/Phone</span>
+                <span>Upload Video File (Bunny Direct)</span>
               </button>
 
               <button
                 type="button"
+                tabIndex={0}
                 onClick={() => {
                   soundFx.playPop();
                   setInputMode('url');
                 }}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-400 ${
                   inputMode === 'url'
                     ? 'bg-indigo-600 text-white shadow'
                     : 'text-slate-600 hover:text-slate-900'
@@ -416,7 +459,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               </button>
             </div>
 
-            {/* 1. NATIVE FILE INPUT DROPZONE (Video or Audio File) */}
+            {/* 1. DIRECT BUNNY FILE INPUT DROPZONE */}
             {inputMode === 'file' ? (
               <div>
                 <label className="block text-xs font-extrabold text-slate-700 mb-1 flex items-center justify-between">
@@ -425,7 +468,9 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                       ? 'Select Audio File (MP3 / WAV / M4A) *'
                       : 'Select Video File (MP4 / WebM / MOV) *'}
                   </span>
-                  <span className="text-[10px] text-amber-600 font-bold">Native File Upload</span>
+                  <span className="text-[10px] text-orange-600 font-bold bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                    Bypasses Supabase Storage
+                  </span>
                 </label>
 
                 <input
@@ -438,8 +483,16 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                 />
 
                 <div
+                  tabIndex={0}
+                  role="button"
                   onClick={() => mediaFileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all ${
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      mediaFileInputRef.current?.click();
+                    }
+                  }}
+                  className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all focus:outline-none focus:ring-4 focus:ring-amber-400 ${
                     selectedMediaFile
                       ? 'border-emerald-400 bg-emerald-50/60'
                       : 'border-amber-300 hover:border-amber-500 bg-amber-50/40 hover:bg-amber-50'
@@ -456,18 +509,19 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                             {selectedMediaFile.name}
                           </p>
                           <p className="text-[10px] text-slate-500 font-semibold">
-                            Size: {formatFileSize(selectedMediaFile.size)} • Type: {selectedMediaFile.type || 'Media File'}
+                            Size: {formatFileSize(selectedMediaFile.size)} • Bunny Direct Upload
                           </p>
                         </div>
                       </div>
 
                       <button
                         type="button"
+                        tabIndex={0}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedMediaFile(null);
                         }}
-                        className="p-1 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 shrink-0"
+                        className="p-1 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 shrink-0 cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -476,10 +530,10 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                     <div className="space-y-1 py-1">
                       <UploadCloud className="w-8 h-8 text-amber-500 mx-auto" />
                       <p className="font-extrabold text-xs text-slate-800">
-                        Click to browse local device or drag file here
+                        Click to select video file for direct Bunny CDN upload
                       </p>
                       <p className="text-[10px] text-slate-500 font-medium">
-                        Accepts {mediaType === 'audiobook' ? 'audio files (MP3, WAV, AAC)' : 'video files (MP4, WebM, MOV)'}
+                        Accepts {mediaType === 'audiobook' ? 'audio (MP3, WAV)' : 'video (MP4, WebM, MOV)'} • High speed transcoding
                       </p>
                     </div>
                   )}
@@ -496,6 +550,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                 </label>
                 <input
                   type="url"
+                  tabIndex={0}
                   placeholder="https://www.youtube.com/watch?v=... or https://vimeo.com/..."
                   value={mediaUrlInput}
                   onChange={(e) => {
@@ -508,7 +563,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                       }
                     }
                   }}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-300"
                 />
 
                 {mediaUrlInput.trim() && (
@@ -526,24 +581,24 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               </div>
             )}
 
-            {/* 2. NATIVE FILE INPUT DROPZONE (Thumbnail / Cover Image) */}
+            {/* 2. THUMBNAIL / COVER IMAGE SELECTION */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-extrabold text-slate-700">
-                  Thumbnail / Cover Image *
+                  Thumbnail / Cover Image
                 </label>
                 {isExtractingThumbnail ? (
                   <span className="text-[10px] text-amber-600 font-bold flex items-center gap-1 animate-pulse">
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>Extracting Frame (00:00:01)...</span>
+                    <span>Extracting Preview Frame...</span>
                   </span>
                 ) : selectedThumbnailFile ? (
                   <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                     <Check className="w-3 h-3" />
-                    <span>Preview Frame Captured</span>
+                    <span>Custom Image Selected</span>
                   </span>
                 ) : (
-                  <span className="text-[10px] text-slate-400">PNG, JPG, WebP</span>
+                  <span className="text-[10px] text-slate-400">Bunny CDN auto-generates HD thumbnails</span>
                 )}
               </div>
 
@@ -558,13 +613,21 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
 
               <div className="flex items-center gap-3">
                 <div
+                  tabIndex={0}
+                  role="button"
                   onClick={() => thumbFileInputRef.current?.click()}
-                  className="flex-1 border border-slate-300 hover:border-amber-400 rounded-xl p-2.5 bg-slate-50 hover:bg-slate-100 cursor-pointer flex items-center justify-between gap-2 transition-all"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      thumbFileInputRef.current?.click();
+                    }
+                  }}
+                  className="flex-1 border border-slate-300 hover:border-amber-400 rounded-xl p-2.5 bg-slate-50 hover:bg-slate-100 cursor-pointer flex items-center justify-between gap-2 transition-all focus:outline-none focus:ring-2 focus:ring-amber-400"
                 >
                   <div className="flex items-center gap-2 truncate">
                     <ImageIcon className="w-4 h-4 text-amber-600 shrink-0" />
                     <span className="text-xs font-bold text-slate-700 truncate">
-                      {selectedThumbnailFile ? selectedThumbnailFile.name : 'Upload Custom Cover Image...'}
+                      {selectedThumbnailFile ? selectedThumbnailFile.name : 'Upload Custom Cover Image (Optional)...'}
                     </span>
                   </div>
                   <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded shrink-0">
@@ -594,10 +657,11 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="e.g. Learning Fun with Alphabet Kittens"
+                tabIndex={0}
+                placeholder="e.g. Learning Fun with Alphabet Animals"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-amber-500"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-300"
                 required
               />
             </div>
@@ -606,9 +670,10 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
             <div>
               <label className="block text-xs font-extrabold text-slate-700 mb-1">Category / Genre</label>
               <select
+                tabIndex={0}
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-amber-500"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-300 cursor-pointer"
               >
                 <option value="Music & Movement">Music & Movement</option>
                 <option value="Science & Discovery">Science & Discovery</option>
@@ -627,9 +692,10 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                 {(['4-5', '6-7', '8-10'] as AgeGroup[]).map((age) => (
                   <button
                     type="button"
+                    tabIndex={0}
                     key={age}
                     onClick={() => handleAgeToggle(age)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-400 ${
                       targetAges.includes(age)
                         ? 'bg-amber-500 text-white shadow'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -646,10 +712,11 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
               <label className="block text-xs font-extrabold text-slate-700 mb-1">Description *</label>
               <textarea
                 rows={2}
+                tabIndex={0}
                 placeholder="Brief educational description for kids and parents..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-amber-500"
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl py-2 px-3 text-xs font-bold focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-300"
                 required
               />
             </div>
@@ -660,7 +727,7 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                 <div className="flex items-center justify-between text-xs font-extrabold text-amber-900">
                   <span className="flex items-center gap-1.5">
                     <Loader2 className="w-4 h-4 animate-spin text-amber-600" />
-                    <span>{uploadStatusText || 'Uploading to Supabase Storage...'}</span>
+                    <span>{uploadStatusText || 'Streaming directly to Bunny CDN...'}</span>
                   </span>
                   <span>{uploadProgress}%</span>
                 </div>
@@ -678,25 +745,26 @@ export const VideoUploadModal: React.FC<VideoUploadModalProps> = ({
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                 <span>Uploader: <strong>{currentUserEmail}</strong></span>
               </span>
-              <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-md">
-                Pending Moderation
+              <span className="bg-orange-100 text-orange-800 text-[10px] font-bold px-2 py-0.5 rounded-md border border-orange-200">
+                Bunny Stream Direct
               </span>
             </div>
 
             <button
               type="submit"
+              tabIndex={0}
               disabled={isUploading}
-              className="w-full bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-extrabold text-xs py-3 rounded-2xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-extrabold text-xs py-3 rounded-2xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer focus:outline-none focus:ring-4 focus:ring-amber-400"
             >
               {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Uploading File to Storage...</span>
+                  <span>Streaming directly to Bunny CDN...</span>
                 </>
               ) : (
                 <>
                   <UploadCloud className="w-4 h-4" />
-                  <span>Upload & Submit for Admin Review</span>
+                  <span>Upload & Publish to Bunny Stream</span>
                 </>
               )}
             </button>

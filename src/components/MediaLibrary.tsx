@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { MediaItem, MediaType, AgeGroup, SupportedLanguage } from '../types';
-import { Play, Headphones, Music, Star, Search, X, Volume2, Sparkles, Heart, Trash2, ShieldCheck, ExternalLink, ChevronRight, PlayCircle, UploadCloud } from 'lucide-react';
+import { Play, Headphones, Music, Search, X, Volume2, Sparkles, Heart, Trash2, ShieldCheck, ExternalLink, ChevronRight, PlayCircle, UploadCloud, Compass, LogIn } from 'lucide-react';
 import { soundFx, speakText } from '../utils/soundAndTTS';
 import { getTranslation } from '../data/translations';
 import { TvVideoPlayer } from './TvVideoPlayer';
 import { VideoPlayerModal } from './VideoPlayerModal';
 import { useTvNavigation } from '../hooks/useTvNavigation';
-import { parseExternalVideoUrl } from '../utils/mediaUtils';
+import { useAuth } from '../context/AuthContext';
 
 interface MediaLibraryProps {
   mediaList: MediaItem[];
@@ -42,12 +42,18 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   onOpenParentPin,
 }) => {
   const t = (key: string, fallback: string) => getTranslation(currentLanguage, key, fallback);
+  const { openAuthModal } = useAuth();
+
+  // Navigation tab state: 'explore' (Explore All Main Library) or 'favorites' (My Favorites)
+  const [activeCatalogTab, setActiveCatalogTab] = useState<'explore' | 'favorites'>('explore');
+
   const [selectedType, setSelectedType] = useState<MediaType | 'all'>('all');
   const [selectedAge, setSelectedAge] = useState<AgeGroup | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMedia, setActiveMedia] = useState<MediaItem | null>(null);
   const [deletingItem, setDeletingItem] = useState<MediaItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showSignInRequiredModal, setShowSignInRequiredModal] = useState(false);
 
   const handleUploadClick = () => {
     soundFx.playPop();
@@ -94,17 +100,51 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   // Smart TV Remote D-Pad Navigation Back Key Listener
   useTvNavigation({
     onBack: () => {
-      if (deletingItem) {
+      if (showSignInRequiredModal) {
+        setShowSignInRequiredModal(false);
+      } else if (deletingItem) {
         setDeletingItem(null);
       } else if (activeMedia) {
         soundFx.playPop();
         setActiveMedia(null);
       }
     },
-    enabled: !!activeMedia || !!deletingItem,
+    enabled: !!activeMedia || !!deletingItem || showSignInRequiredModal,
   });
 
+  const handleHeartClick = (e: React.MouseEvent, mediaId: string) => {
+    e.stopPropagation();
+    soundFx.playPop();
+
+    if (!isAuthenticated) {
+      setShowSignInRequiredModal(true);
+      return;
+    }
+
+    onToggleFavorite(mediaId);
+  };
+
+  const handleFavoritesTabClick = () => {
+    soundFx.playPop();
+    if (!isAuthenticated) {
+      setShowSignInRequiredModal(true);
+      return;
+    }
+    setActiveCatalogTab('favorites');
+  };
+
+  const handleExploreTabClick = () => {
+    soundFx.playPop();
+    setActiveCatalogTab('explore');
+  };
+
   const filteredList = mediaList.filter((item) => {
+    // Tab filtering: If 'favorites' tab is active, only show favorited items
+    if (activeCatalogTab === 'favorites') {
+      const isFav = favoriteIds.includes(item.id) || (item.bunny_video_id && favoriteIds.includes(item.bunny_video_id));
+      if (!isFav) return false;
+    }
+
     const matchesType = selectedType === 'all' || item.type === selectedType;
     const matchesAge = selectedAge === 'all' || item.targetAgeGroup.includes(selectedAge);
     const matchesSearch =
@@ -126,19 +166,63 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
     onRecordMediaWatch(5); // Record 5 minutes media watch engagement
   };
 
-  const handlePlayNext = () => {
-    if (!activeMedia) return;
-    const currentIndex = filteredList.findIndex((x) => x.id === activeMedia.id);
-    const nextIndex = (currentIndex + 1) % filteredList.length;
-    const nextItem = filteredList[nextIndex] || filteredList[0];
-    if (nextItem) {
-      handleMediaClick(nextItem);
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* Search & Filter Top Bar */}
+      {/* 1. Primary Navigation Bar / Tabs: "Explore All" vs "My Favorites" */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white/95 backdrop-blur-md rounded-3xl p-3 sm:p-4 shadow-sm border-2 border-amber-200">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          {/* Explore All (Main Library) Tab */}
+          <button
+            type="button"
+            tabIndex={0}
+            onClick={handleExploreTabClick}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-amber-400 ${
+              activeCatalogTab === 'explore'
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md scale-105'
+                : 'bg-slate-100 text-slate-700 hover:bg-amber-50 hover:text-amber-800'
+            }`}
+          >
+            <Compass className="w-4 h-4" />
+            <span>Explore All</span>
+          </button>
+
+          {/* My Favorites Tab */}
+          <button
+            type="button"
+            tabIndex={0}
+            onClick={handleFavoritesTabClick}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-400 ${
+              activeCatalogTab === 'favorites'
+                ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md scale-105'
+                : 'bg-slate-100 text-slate-700 hover:bg-rose-50 hover:text-rose-700'
+            }`}
+          >
+            <Heart className={`w-4 h-4 ${activeCatalogTab === 'favorites' ? 'fill-white text-white' : 'fill-rose-500 text-rose-500'}`} />
+            <span>My Favorites</span>
+            {isAuthenticated && favoriteIds.length > 0 && (
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                activeCatalogTab === 'favorites' ? 'bg-white/30 text-white' : 'bg-rose-100 text-rose-700'
+              }`}>
+                {favoriteIds.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Upload Video CTA Button */}
+        <button
+          type="button"
+          tabIndex={0}
+          onClick={handleUploadClick}
+          className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:from-amber-500 hover:to-orange-500 text-slate-900 font-extrabold text-xs px-4 py-2.5 rounded-2xl shadow-sm border border-amber-300 transition-all cursor-pointer active:scale-95 shrink-0 focus:outline-none focus:ring-4 focus:ring-amber-400"
+          title="Upload a new kid-friendly video, cartoon or story"
+        >
+          <UploadCloud className="w-4 h-4 text-amber-950" />
+          <span>+ Upload Video</span>
+        </button>
+      </div>
+
+      {/* 2. Search & Category Filters Bar */}
       <div className="bg-white rounded-3xl p-4 shadow-sm border-2 border-amber-200 space-y-3">
         <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
           {/* Search Bar */}
@@ -154,20 +238,8 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
             />
           </div>
 
-          {/* Type Category Pills & Upload CTA */}
+          {/* Type Category Pills */}
           <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
-            {/* Prominent Upload Video CTA Button */}
-            <button
-              type="button"
-              tabIndex={0}
-              onClick={handleUploadClick}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 hover:from-amber-500 hover:to-orange-500 text-slate-900 font-extrabold text-xs px-3.5 py-1.5 rounded-full shadow-sm border border-amber-300 transition-all cursor-pointer active:scale-95 shrink-0 focus:outline-none focus:ring-4 focus:ring-amber-400"
-              title="Upload a new kid-friendly video, cartoon or story"
-            >
-              <UploadCloud className="w-4 h-4 text-amber-950" />
-              <span>+ Upload Video</span>
-            </button>
-
             <button
               type="button"
               tabIndex={0}
@@ -248,33 +320,56 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
         </div>
       </div>
 
-      {/* Media Cards Grid */}
+      {/* 3. Media Cards Grid */}
       {filteredList.length === 0 ? (
         <div className="bg-white rounded-3xl p-10 text-center border-2 border-amber-200 shadow-sm space-y-3">
-          <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
-            <Play className="w-8 h-8 fill-current" />
-          </div>
-          <h3 className="font-extrabold text-lg text-slate-800">No videos uploaded yet</h3>
-          <p className="text-xs text-slate-500 font-medium max-w-sm mx-auto">
-            Try adjusting your search query or age filters above, or upload a new kid-friendly video!
-          </p>
-          <button
-            type="button"
-            tabIndex={0}
-            onClick={() => {
-              setSelectedType('all');
-              setSelectedAge('all');
-              setSearchQuery('');
-            }}
-            className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs rounded-full shadow transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-amber-400"
-          >
-            Clear Filters
-          </button>
+          {activeCatalogTab === 'favorites' ? (
+            <div className="space-y-3">
+              <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-500 flex items-center justify-center mx-auto">
+                <Heart className="w-8 h-8 fill-rose-400 text-rose-500" />
+              </div>
+              <h3 className="font-extrabold text-lg text-slate-800">No favorite videos yet!</h3>
+              <p className="text-xs text-slate-500 font-medium max-w-sm mx-auto">
+                Tap the heart on any video to add it here.
+              </p>
+              <button
+                type="button"
+                tabIndex={0}
+                onClick={handleExploreTabClick}
+                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold text-xs rounded-full shadow transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-amber-400 inline-flex items-center gap-1.5"
+              >
+                <Compass className="w-4 h-4" />
+                <span>Explore All Videos</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+                <Play className="w-8 h-8 fill-current" />
+              </div>
+              <h3 className="font-extrabold text-lg text-slate-800">No videos found</h3>
+              <p className="text-xs text-slate-500 font-medium max-w-sm mx-auto">
+                Try adjusting your search query or age filters above, or upload a new kid-friendly video!
+              </p>
+              <button
+                type="button"
+                tabIndex={0}
+                onClick={() => {
+                  setSelectedType('all');
+                  setSelectedAge('all');
+                  setSearchQuery('');
+                }}
+                className="px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-extrabold text-xs rounded-full shadow transition-all cursor-pointer focus:outline-none focus:ring-4 focus:ring-amber-400"
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredList.map((item) => {
-            const isFav = favoriteIds.includes(item.id);
+            const isFav = favoriteIds.includes(item.id) || (item.bunny_video_id ? favoriteIds.includes(item.bunny_video_id) : false);
             return (
               <div
                 key={item.id}
@@ -341,19 +436,15 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                       </button>
                     )}
 
-                    {/* Favorite Button */}
+                    {/* Heart / Favorite Button */}
                     <button
                       type="button"
                       tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        soundFx.playPop();
-                        onToggleFavorite(item.id);
-                      }}
-                      className="p-2 rounded-full bg-white/80 hover:bg-white text-rose-500 shadow-md transition-transform active:scale-90 focus:outline-none focus:ring-2 focus:ring-amber-400 cursor-pointer"
+                      onClick={(e) => handleHeartClick(e, item.id)}
+                      className="p-2 rounded-full bg-white/90 hover:bg-white shadow-md transition-transform active:scale-90 focus:outline-none focus:ring-2 focus:ring-rose-400 cursor-pointer"
                       title={isFav ? 'Remove from favorites' : 'Add to favorites'}
                     >
-                      <Heart className={`w-4 h-4 ${isFav ? 'fill-rose-500 text-rose-500' : 'text-slate-400'}`} />
+                      <Heart className={`w-4 h-4 transition-colors ${isFav ? 'fill-rose-500 text-rose-500 scale-110' : 'text-slate-400 hover:text-rose-400'}`} />
                     </button>
                   </div>
 
@@ -422,10 +513,58 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
       {activeMedia && (
         <VideoPlayerModal
           media={activeMedia}
-          relatedMedia={mediaList.filter((m) => m.id !== activeMedia.id).slice(0, 4)}
+          sourceContext={activeCatalogTab}
+          relatedMedia={
+            activeCatalogTab === 'favorites'
+              ? mediaList.filter(
+                  (m) =>
+                    (favoriteIds.includes(m.id) || (m.bunny_video_id && favoriteIds.includes(m.bunny_video_id))) &&
+                    m.id !== activeMedia.id
+                )
+              : mediaList.filter((m) => m.id !== activeMedia.id).slice(0, 8)
+          }
           onSelectRelated={(item) => handleMediaClick(item)}
           onClose={() => setActiveMedia(null)}
         />
+      )}
+
+      {/* Sign-In Required for Favorites Modal */}
+      {showSignInRequiredModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 border-4 border-rose-300 shadow-2xl space-y-4 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+              <Heart className="w-7 h-7 fill-rose-500" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-extrabold text-lg text-slate-900">Sign in to Save Favorites</h3>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                Please sign in to save videos to your favorites.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                tabIndex={0}
+                onClick={() => setShowSignInRequiredModal(false)}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                tabIndex={0}
+                onClick={() => {
+                  setShowSignInRequiredModal(false);
+                  openAuthModal('login');
+                }}
+                className="flex-1 py-2.5 px-3 rounded-xl bg-rose-500 hover:bg-rose-600 active:scale-95 text-white font-extrabold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer focus:outline-none focus:ring-4 focus:ring-rose-400"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Sign In</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Admin Delete Video Confirmation Modal */}

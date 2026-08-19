@@ -36,6 +36,10 @@ import {
   approveMediaItemInStorage,
   rejectMediaItemInStorage,
 } from './lib/mediaService';
+import {
+  fetchUserFavoriteIds,
+  toggleSupabaseFavorite,
+} from './lib/favoritesService';
 
 function AppInner() {
   const [profiles, setProfiles] = useState<ChildProfile[]>(INITIAL_CHILD_PROFILES);
@@ -189,21 +193,51 @@ function AppInner() {
     );
   };
 
-  const handleToggleFavorite = (mediaId: string) => {
+  // Sync user's favorites from Supabase `favorites` table when authenticated
+  useEffect(() => {
+    if (user?.id) {
+      fetchUserFavoriteIds(user.id).then((favIds) => {
+        if (favIds && favIds.length > 0) {
+          setProfiles((prev) =>
+            prev.map((p) => {
+              if (p.id === currentProfileId) {
+                const merged = Array.from(new Set([...p.favoriteMediaIds, ...favIds]));
+                return { ...p, favoriteMediaIds: merged };
+              }
+              return p;
+            })
+          );
+        }
+      });
+    }
+  }, [user?.id, currentProfileId]);
+
+  const handleToggleFavorite = async (mediaId: string) => {
+    const currentFavs = currentProfile.favoriteMediaIds || [];
+    const isFav = currentFavs.includes(mediaId);
+    const nextFavs = isFav ? currentFavs.filter((id) => id !== mediaId) : [...currentFavs, mediaId];
+
+    // Optimistically update current child profile state
     setProfiles((prev) =>
       prev.map((p) => {
         if (p.id === currentProfile.id) {
-          const exists = p.favoriteMediaIds.includes(mediaId);
           return {
             ...p,
-            favoriteMediaIds: exists
-              ? p.favoriteMediaIds.filter((id) => id !== mediaId)
-              : [...p.favoriteMediaIds, mediaId],
+            favoriteMediaIds: nextFavs,
           };
         }
         return p;
       })
     );
+
+    // If authenticated, persist to Supabase `favorites` table
+    if (user?.id) {
+      try {
+        await toggleSupabaseFavorite(user.id, mediaId, currentFavs);
+      } catch (err) {
+        console.warn('Error toggling Supabase favorite:', err);
+      }
+    }
   };
 
   const handleRecordMediaWatch = (durationMinutes: number) => {
