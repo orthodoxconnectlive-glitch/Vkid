@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-// Comprehensive Smart TV Remote Keycodes: Samsung Tizen, LG webOS, Android TV, Hisense Vidaa, Fire TV
+// Comprehensive Smart TV & Android Hardware Keycodes: Samsung Tizen, LG webOS, Android TV, Hisense Vidaa, Fire TV, Android Mobile
 export const TV_KEYS = {
   UP: ['ArrowUp', 'Up', '38', 'KEY_UP'],
   DOWN: ['ArrowDown', 'Down', '40', 'KEY_DOWN'],
@@ -95,8 +95,9 @@ function getDistanceInDirection(
 }
 
 /**
- * Custom React Hook for Smart TV D-Pad Remote Control Navigation
- * Optimized for older Samsung Tizen, LG webOS, Android TV, and standard desktop/mobile browsers.
+ * Custom React Hook for Smart TV D-Pad Remote & Android Hardware Back Button
+ * Intercepts hardware Back button presses (Android popstate, TV 10009/461, Esc) so open modals close first
+ * rather than navigating away or closing the application.
  */
 export function useTvNavigation(options: TvNavigationOptions = {}) {
   const { onBack, onEnter, enabled = true } = options;
@@ -105,6 +106,45 @@ export function useTvNavigation(options: TvNavigationOptions = {}) {
     registerTvHardwareKeys();
   }, []);
 
+  // Android Hardware Back Button (popstate & Cordova/Capacitor bridge)
+  useEffect(() => {
+    if (!enabled || !onBack || typeof window === 'undefined') return;
+
+    let hasPushedState = false;
+
+    try {
+      window.history.pushState({ modalBackTrap: true, timestamp: Date.now() }, '');
+      hasPushedState = true;
+    } catch (err) {
+      // Ignore if pushState not permitted in iframe sandbox
+    }
+
+    const handlePopState = (e: PopStateEvent) => {
+      onBack();
+    };
+
+    const handleCordovaBackButton = (e: Event) => {
+      e.preventDefault();
+      onBack();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    document.addEventListener('backbutton', handleCordovaBackButton);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      document.removeEventListener('backbutton', handleCordovaBackButton);
+      if (hasPushedState && window.history.state?.modalBackTrap) {
+        try {
+          window.history.back();
+        } catch (e) {
+          // Ignore
+        }
+      }
+    };
+  }, [enabled, onBack]);
+
+  // Keyboard & D-Pad Remote Event Handlers
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return;
 
@@ -113,7 +153,7 @@ export function useTvNavigation(options: TvNavigationOptions = {}) {
       const keyCode = e.keyCode || e.which;
       const keyCodeStr = String(keyCode);
 
-      // 1. Back / Return Key Handling for Smart TV Remotes
+      // 1. Back / Return Key Handling for Smart TV Remotes & Android Back
       // (Samsung Tizen: 10009, LG webOS: 461, Standard: 27 / 8)
       if (
         TV_KEYS.BACK.includes(keyName) ||

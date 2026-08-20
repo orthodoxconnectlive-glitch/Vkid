@@ -68,6 +68,7 @@ interface AuthContextType {
     schoolName?: string
   ) => Promise<{ success: boolean; error?: string; message?: string; isEmailUnconfirmed?: boolean }>;
   resendVerificationEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   updateSchoolData: (schoolName: string, classes: Classroom[], activeClassId?: string) => void;
   togglePresentationMode: (enabled?: boolean) => void;
@@ -330,7 +331,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const resendVerificationEmail = async (email: string): Promise<{ success: boolean; error?: string }> => {
     const cleanEmail = email.trim().toLowerCase();
     if (!supabase) {
-      return { success: false, error: 'Supabase authentication is not configured.' };
+      return { success: false, error: 'Authentication is not configured.' };
     }
 
     try {
@@ -345,6 +346,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'Failed to resend verification email.' };
+    }
+  };
+
+  const resetPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!supabase) {
+      return { success: false, error: 'Authentication is not configured.' };
+    }
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: window.location.origin,
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to send password reset email.' };
     }
   };
 
@@ -406,6 +427,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         signUp,
         resendVerificationEmail,
+        resetPassword,
         logout,
         updateSchoolData,
         togglePresentationMode,

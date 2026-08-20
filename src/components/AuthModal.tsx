@@ -18,6 +18,8 @@ import {
   Building2,
   Users,
   Send,
+  KeyRound,
+  Sparkles,
 } from 'lucide-react';
 import { soundFx } from '../utils/soundAndTTS';
 
@@ -34,6 +36,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
     login,
     signUp,
     resendVerificationEmail,
+    resetPassword,
   } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
@@ -47,11 +50,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResending, setIsResending] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [isEmailUnconfirmed, setIsEmailUnconfirmed] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
+  const [resetSuccessMsg, setResetSuccessMsg] = useState('');
 
   const t = (key: string, fallback?: string) => getTranslation(currentLanguage, key, fallback);
 
@@ -63,6 +68,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
       setSuccessMsg('');
       setIsEmailUnconfirmed(false);
       setResendSuccess(false);
+      setResetSuccessMsg('');
     }
   }, [authModalOpen, authModalInitialTab, authModalAccountType]);
 
@@ -75,6 +81,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
     setSuccessMsg('');
     setIsEmailUnconfirmed(false);
     setResendSuccess(false);
+    setResetSuccessMsg('');
   };
 
   const handleAccountTypeChange = (type: 'parent' | 'educator') => {
@@ -84,6 +91,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
     setSuccessMsg('');
     setIsEmailUnconfirmed(false);
     setResendSuccess(false);
+    setResetSuccessMsg('');
   };
 
   const validateForm = () => {
@@ -118,6 +126,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
     setSuccessMsg('');
     setIsEmailUnconfirmed(false);
     setResendSuccess(false);
+    setResetSuccessMsg('');
 
     if (!validateForm()) return;
 
@@ -129,7 +138,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
         if (!result.success) {
           if (result.isEmailUnconfirmed) {
             setIsEmailUnconfirmed(true);
-            setErrorMsg('Please verify your email address before signing in.');
+            setErrorMsg('Your email has not been verified yet. Please confirm your email or resend verification.');
           } else {
             setErrorMsg(result.error || 'Invalid credentials. Please try again.');
           }
@@ -170,7 +179,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
 
   const handleResendVerification = async () => {
     if (!email.trim() || !email.includes('@')) {
-      setErrorMsg('Please enter your email address to resend verification.');
+      setErrorMsg('Please enter your email address above to resend verification.');
       return;
     }
 
@@ -183,7 +192,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
       if (res.success) {
         soundFx.playSuccess();
         setResendSuccess(true);
-        setSuccessMsg('Verification email resent! Please check your inbox.');
+        setSuccessMsg('Verification email resent! Please check your inbox and spam folder.');
       } else {
         setErrorMsg(res.error || 'Could not resend verification email. Please try again later.');
       }
@@ -191,6 +200,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
       setErrorMsg(err.message || 'Failed to resend verification email.');
     } finally {
       setIsResending(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email.trim() || !email.includes('@')) {
+      setErrorMsg('Please enter your registered email address in the field above first.');
+      return;
+    }
+
+    soundFx.playPop();
+    setIsResettingPassword(true);
+    setErrorMsg('');
+    setResetSuccessMsg('');
+
+    try {
+      const res = await resetPassword(email);
+      if (res.success) {
+        soundFx.playSuccess();
+        setResetSuccessMsg(`Password reset email sent to ${email}. Please check your inbox.`);
+      } else {
+        setErrorMsg(res.error || 'Could not send password reset email. Please try again.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to send password reset email.');
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -207,6 +242,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
           }}
           disabled={isSubmitting}
           className="absolute top-4 right-4 p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors disabled:opacity-50 focus:outline-none focus:ring-4 focus:ring-amber-400 cursor-pointer"
+          title="Close"
         >
           <X className="w-5 h-5" />
         </button>
@@ -226,7 +262,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
           <p className="text-xs text-slate-500 font-medium mt-1">
             {accountType === 'educator'
               ? 'Manage classroom playlists, student access & presentation modes.'
-              : 'Safe, verified parental access with Supabase Auth security.'}
+              : 'Safe, verified parental access & account security.'}
           </p>
         </div>
 
@@ -292,12 +328,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
           </button>
         </div>
 
-        {/* Unconfirmed Email Notice & Resend Action */}
+        {/* Unconfirmed Email Notice & Clickable Resend Action */}
         {isEmailUnconfirmed && (
-          <div className="mb-4 p-3.5 bg-amber-50 border-2 border-amber-300 rounded-2xl text-amber-900 text-xs font-bold space-y-2 animate-in fade-in">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
-              <span>Please verify your email address before signing in.</span>
+          <div className="mb-4 p-3.5 bg-amber-50 border-2 border-amber-300 rounded-2xl text-amber-900 text-xs font-bold space-y-2.5 animate-in fade-in">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+              <div>
+                <span className="block font-black text-amber-950">Email Verification Required</span>
+                <span className="font-medium text-[11px] text-amber-800">
+                  Your account requires email verification before signing in. Please check your inbox or click below to receive a new link.
+                </span>
+              </div>
             </div>
             {!resendSuccess ? (
               <button
@@ -305,12 +346,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
                 tabIndex={0}
                 onClick={handleResendVerification}
                 disabled={isResending}
-                className="w-full flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-extrabold text-xs py-2 px-3 rounded-xl transition-all shadow-sm focus:outline-none focus:ring-4 focus:ring-amber-400 cursor-pointer disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-black text-xs py-2.5 px-3 rounded-xl transition-all shadow-sm focus:outline-none focus:ring-4 focus:ring-amber-400 cursor-pointer disabled:opacity-50"
               >
                 {isResending ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Resending verification email...</span>
+                    <span>Resending Verification Email...</span>
                   </>
                 ) : (
                   <>
@@ -320,11 +361,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
                 )}
               </button>
             ) : (
-              <div className="p-2 bg-emerald-100 border border-emerald-300 rounded-xl text-emerald-800 text-[11px] font-extrabold flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>Verification email resent! Please check your inbox.</span>
+              <div className="p-2.5 bg-emerald-100 border border-emerald-300 rounded-xl text-emerald-900 text-[11px] font-extrabold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Verification email resent! Please check your inbox and spam folder.</span>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Password Reset Confirmation Alert */}
+        {resetSuccessMsg && (
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <span>{resetSuccessMsg}</span>
           </div>
         )}
 
@@ -337,7 +386,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
         )}
 
         {/* Standard Success Alert */}
-        {successMsg && (
+        {successMsg && !isEmailUnconfirmed && (
           <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
             <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
             <span>{successMsg}</span>
@@ -409,9 +458,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
 
           {/* Password field */}
           <div>
-            <label className="block text-xs font-extrabold text-slate-700 mb-1">
-              Password *
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-extrabold text-slate-700">
+                Password *
+              </label>
+            </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -427,11 +478,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
                 type="button"
                 tabIndex={0}
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded-md"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 focus:outline-none focus:ring-2 focus:ring-amber-400 rounded-md cursor-pointer"
+                title={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+
+            {/* Forgot password button below password field in Login mode */}
+            {activeTab === 'login' && (
+              <div className="flex justify-end mt-1.5">
+                <button
+                  type="button"
+                  tabIndex={0}
+                  onClick={handleForgotPassword}
+                  disabled={isResettingPassword}
+                  className="text-[11px] font-bold text-amber-600 hover:text-amber-800 hover:underline flex items-center gap-1 cursor-pointer transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 rounded px-1 disabled:opacity-50"
+                >
+                  <KeyRound className="w-3 h-3" />
+                  <span>
+                    {isResettingPassword ? 'Sending reset link...' : 'Forgot password?'}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Confirm Password field (Register only) */}
@@ -470,7 +540,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ currentLanguage }) => {
             {isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Authenticating with Supabase...</span>
+                <span>Verifying credentials...</span>
               </>
             ) : activeTab === 'login' ? (
               <>
